@@ -26,34 +26,61 @@ mycolors = np.array([
     [0.00, 0.00, 0.00],  # 黑色
 ])
 
-def load_scene_data(scene_file='../scen_semroom_new.mat'):
+def load_scene_data(scene_file='scen_semroom_new.mat'):
     """加载场景数据（房间布局）"""
     try:
         scene_data = sio.loadmat(scene_file)
-        return scene_data.get('s_scen', None)
-    except:
-        print(f"警告: 无法加载场景文件 {scene_file}")
+        s_scen = scene_data.get('s_scen', None)
+        if s_scen is not None:
+            print(f"   ✓ 成功加载场景文件: {scene_file}")
+            return s_scen
+        else:
+            print(f"   ⚠ 场景文件中未找到 's_scen' 字段")
+            return None
+    except FileNotFoundError:
+        print(f"   ⚠ 场景文件不存在: {scene_file}")
+        return None
+    except Exception as e:
+        print(f"   ⚠ 加载场景文件失败: {e}")
         return None
 
 def plot_floor_plan(s_scen, ax):
-    """绘制房间平面图"""
+    """绘制房间平面图（墙壁）"""
     if s_scen is None:
+        print("   ⚠ 未加载场景数据，跳过环境地图绘制")
         return
 
     try:
-        # 提取墙壁数据
-        if 'walls' in s_scen.dtype.names:
-            walls = s_scen['walls'][0, 0]
-            for i in range(walls.shape[1]):
-                wall = walls[:, i]
-                ax.plot([wall[0], wall[2]], [wall[1], wall[3]],
-                       'k-', linewidth=1.5, alpha=0.5)
-    except:
-        pass
+        # 提取平面图数据
+        s_scen_struct = s_scen[0, 0]
 
-def visualize_trajectory_and_anchors(results_file='results.npz',
-                                    data_file='../scenarioCleanM2_new.mat',
-                                    scene_file='../scen_semroom_new.mat'):
+        # 检查是否有 'fp' 字段（floor plan）
+        if 'fp' in s_scen_struct.dtype.names:
+            fp = s_scen_struct['fp'][0, 0]
+
+            # 提取墙壁线段数据
+            if 'segments' in fp.dtype.names:
+                segments = fp['segments']
+                print(f"   ✓ 绘制 {segments.shape[0]} 个墙壁线段")
+
+                # 绘制每个墙壁线段
+                # segments格式: [x1, y1, x2, y2, ?, ?]
+                for i in range(segments.shape[0]):
+                    x1, y1, x2, y2 = segments[i, 0:4]
+                    ax.plot([x1, x2], [y1, y2], 'k-', linewidth=1.5, alpha=0.6)
+            else:
+                print("   ⚠ 场景数据中未找到 'segments' 字段")
+        else:
+            print("   ⚠ 场景数据中未找到 'fp' 字段")
+
+    except Exception as e:
+        print(f"   ⚠ 绘制平面图失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+def visualize_trajectory_and_anchors(results_file='results/results.npz',
+                                    data_file='scenarioCleanM2_new.mat',
+                                    scene_file='scen_semroom_new.mat'):
     """
     生成图1: 轨迹和锚点可视化（与MATLAB Figure 1相同）
     """
@@ -97,18 +124,22 @@ def visualize_trajectory_and_anchors(results_file='results.npz',
     s_scen = load_scene_data(scene_file)
 
     # ========================================
-    # 图1: 轨迹和锚点（最终状态）
+    # 图1: 轨迹和锚点（完全按照MATLAB格式）
     # ========================================
     print("4. 生成图1: 轨迹和锚点...")
     fig1 = plt.figure(1, figsize=(12, 10))
     ax1 = fig1.add_subplot(111)
 
-    # 绘制房间平面图
+    # 绘制房间平面图（环境地图）
     plot_floor_plan(s_scen, ax1)
 
-    # 绘制真实轨迹
+    # 绘制真实轨迹（灰色，linewidth=1.5）
     ax1.plot(true_trajectory[0, :], true_trajectory[1, :],
             '-', color=[0.5, 0.5, 0.5], linewidth=1.5, label='True Trajectory')
+
+    # 绘制估计轨迹（绿色虚线，linewidth=1.5）
+    ax1.plot(estimated_trajectory[0, :], estimated_trajectory[1, :],
+            '--', color=[0, 0.5, 0], linewidth=1.5, label='Estimated Trajectory')
 
     # 最后一步
     final_step = num_steps - 1
@@ -118,16 +149,15 @@ def visualize_trajectory_and_anchors(results_file='results.npz',
         # 真实锚点位置
         true_anchor_positions = data_va[sensor]['positions']
 
-        # 绘制真实锚点（方框+叉）
+        # 绘制真实锚点（方框+叉，linewidth=1）
         ax1.plot(true_anchor_positions[0, :], true_anchor_positions[1, :],
-                linestyle='none', marker='s', markersize=8,
-                markeredgecolor=mycolors[sensor], markerfacecolor='none',
-                linewidth=1)
+                linestyle='none', linewidth=1, color=mycolors[sensor],
+                marker='s', markersize=8, markeredgecolor=mycolors[sensor])
         ax1.plot(true_anchor_positions[0, :], true_anchor_positions[1, :],
-                linestyle='none', marker='x', markersize=7.9,
-                markeredgecolor=mycolors[sensor], linewidth=1)
+                linestyle='none', linewidth=1, color=mycolors[sensor],
+                marker='x', markersize=7.9, markeredgecolor=mycolors[sensor])
 
-        # 估计的锚点
+        # 绘制估计的锚点
         if estimated_anchors[sensor][final_step] is not None:
             for anchor_idx, anchor in enumerate(estimated_anchors[sensor][final_step]):
                 if anchor is not None:
@@ -135,7 +165,7 @@ def visualize_trajectory_and_anchors(results_file='results.npz',
                     anchor_existence = anchor['posteriorExistence']
 
                     if anchor_existence >= detection_threshold:
-                        # 绘制粒子云（如果可用）
+                        # 绘制粒子云（MATLAB风格：plotScatter2d，alpha=0.3）
                         try:
                             if isinstance(posterior_particles_anchors[sensor], dict):
                                 if anchor_idx in posterior_particles_anchors[sensor]:
@@ -147,24 +177,22 @@ def visualize_trajectory_and_anchors(results_file='results.npz',
                                 ax1.scatter(particles[0, :], particles[1, :],
                                           c=[mycolors[sensor]], alpha=0.3, s=1, marker='.')
                         except:
-                            pass  # 跳过无法访问的粒子数据
+                            pass
 
-                        # 绘制估计位置（黑色+号）
+                        # 绘制估计的锚点位置（黑色+号，markersize=8）
                         ax1.plot(anchor_pos[0], anchor_pos[1],
-                                'k+', markersize=8, linewidth=1.5)
+                                color='k', marker='+', markersize=8)
 
-    # 绘制估计轨迹的最终位置
+    # 绘制估计的当前位置（绿色+号，markersize=8, linewidth=1.5）
     ax1.plot(estimated_trajectory[0, final_step], estimated_trajectory[1, final_step],
-            color=[0, 0.5, 0], marker='+', markersize=8, linewidth=1.5,
-            label='Estimated Position')
+            color=[0, 0.5, 0], marker='+', markersize=8, linewidth=1.5)
 
-    ax1.set_xlabel('x-axis [m]', fontsize=12)
-    ax1.set_ylabel('y-axis [m]', fontsize=12)
+    ax1.set_xlabel('xaxis', fontsize=12)
+    ax1.set_ylabel('yaxis', fontsize=12)
     ax1.set_xlim([-7, 15])
     ax1.set_ylim([-8, 15.5])
     ax1.set_aspect('equal')
-    ax1.grid(True, alpha=0.3)
-    ax1.legend(fontsize=10)
+    ax1.legend(loc='best', fontsize=10)
     ax1.set_title('BP-SLAM: Trajectory and Anchor Estimation', fontsize=14)
 
     # 保存图1
@@ -287,13 +315,19 @@ def visualize_trajectory_and_anchors(results_file='results.npz',
 if __name__ == '__main__':
     # 使用快速测试结果（如果存在），否则使用完整测试结果
     import os
-    if os.path.exists('results_quick.npz'):
-        results_file = 'results_quick.npz'
+    if os.path.exists('results/results_quick.npz'):
+        results_file = 'results/results_quick.npz'
+    elif os.path.exists('results/results.npz'):
+        results_file = 'results/results.npz'
     else:
-        results_file = 'results.npz'
+        # 兼容旧的文件位置
+        if os.path.exists('results_quick.npz'):
+            results_file = 'results_quick.npz'
+        else:
+            results_file = 'results.npz'
 
     visualize_trajectory_and_anchors(
         results_file=results_file,
-        data_file='../scenarioCleanM2_new.mat',
-        scene_file='../scen_semroom_new.mat'
+        data_file='scenarioCleanM2_new.mat',
+        scene_file='scen_semroom_new.mat'
     )

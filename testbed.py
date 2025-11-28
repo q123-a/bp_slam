@@ -129,8 +129,13 @@ def main():
     # ---------------------------
     # 8. 保存结果
     # ---------------------------
-    print("\n保存结果到 results.npz...")
-    np.savez('results.npz',
+    # 创建results文件夹
+    from pathlib import Path
+    results_dir = Path('results')
+    results_dir.mkdir(exist_ok=True)
+
+    print("\n保存结果到 results/results.npz...")
+    np.savez(results_dir / 'results.npz',
              estimated_trajectory=estimated_trajectory,
              true_trajectory=true_trajectory,
              num_estimated_anchors=num_estimated_anchors,
@@ -139,21 +144,25 @@ def main():
              parameters=parameters,
              allow_pickle=True)
 
-    print("完成！结果已保存。")
+    print("完成！结果已保存到 results/ 文件夹。")
 
     # ---------------------------
-    # 9. MATLAB风格可视化（3个图表）
+    # 9. 统一可视化模块（3个图表）
     # ---------------------------
-    print("\n生成MATLAB风格可视化...")
-    from plot_matlab_style import plot_all_matlab_style
+    print("\n生成可视化图表...")
+    from bp_slam.visualization.visualizer import visualize_online
 
     # 获取最后一个时间步的锚点粒子（如果有）
     last_particles = posterior_particles_anchors[-1] if len(posterior_particles_anchors) > 0 and posterior_particles_anchors[-1] is not None else None
 
-    plot_all_matlab_style(
+    # 调用统一可视化模块
+    stats = visualize_online(
         true_trajectory, estimated_trajectory, estimated_anchors,
-        last_particles, num_estimated_anchors,
-        data_va, parameters, mode=0, num_steps=parameters['maxSteps']
+        last_particles, data_va, parameters,
+        scene_file='scen_semroom_new.mat',
+        output_dir='results',
+        save=True,
+        show=True
     )
 
     print("\n提示：关闭图表窗口以继续...")
