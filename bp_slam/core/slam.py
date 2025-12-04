@@ -1,5 +1,5 @@
 """
-基于信念传播的多路径SLAM算法核心函数
+基于信念传播的多路径SLAM算法核心函数 (集成 Hybrid FGNN)
 BP-based Multipath-assisted SLAM core algorithm
 
 Author: Florian Meyer, Erik Leitinger, 20/05/17
@@ -15,6 +15,15 @@ from ..utils.distance import calc_distance
 from .anchors import (init_anchors, predict_anchors, predict_measurements,
                      generate_new_anchors, delete_unreliable_va)
 from .association import calculate_association_probabilities_ga
+
+# FGNN 相关导入
+try:
+    import torch
+    from .gnn_trainer import GNNTrainer
+    FGNN_AVAILABLE = True
+except ImportError:
+    FGNN_AVAILABLE = False
+    print("Warning: PyTorch not available. FGNN mode disabled.")
 
 
 def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_trajectory):
@@ -51,6 +60,18 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
     unreliability_threshold = parameters['unreliabilityThreshold']
     exec_time_per_step = np.zeros(num_steps)
     known_track = parameters['known_track']
+
+    # [新增] 初始化 GNN 训练器
+    gnn_trainer = None
+    use_gnn = parameters.get('use_gnn', False)
+    warmup_steps = parameters.get('gnn_warmup_steps', 50)
+
+    if use_gnn and FGNN_AVAILABLE:
+        gnn_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        gnn_hidden_dim = parameters.get('gnn_hidden_dim', 64)
+        gnn_lr = parameters.get('gnn_lr', 1e-3)
+        gnn_trainer = GNNTrainer(device=gnn_device, lr=gnn_lr, hidden_dim=gnn_hidden_dim)
+        print(f"GNN Trainer initialized on {gnn_device}, warmup steps: {warmup_steps}")
 
     # 预分配存储空间
     estimated_trajectory = np.zeros((4, num_steps))  # 状态空间4维：x,y,vx,vy
@@ -137,18 +158,124 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                 predicted_particles_agent, predicted_particles_anchors, weights_anchor
             )
 
-            # 计算测量与锚点的数据关联概率
-            (association_probabilities, association_probabilities_new,
-             message_lhf_ratios, messages_new) = calculate_association_probabilities_ga(
-                measurements, predicted_measurements, predicted_uncertainties,
-                weights_anchor, new_input_bp, parameters
-            )
+            # ==================================================================
+            # [关键修改] 数据关联：混合特征构建 + 自监督训练
+            # ==================================================================
+
+            # 计算锚点存在概率
+            num_anchors = predicted_particles_anchors.shape[2]
+            existence_probs = np.zeros(num_anchors)
+            for a in range(num_anchors):
+                existence_probs[a] = np.sum(weights_anchor[:, a])
+
+            # --- A. 计算物理模型概率 (Beta) ---
+            beta_matrix = np.zeros((num_measurements, num_anchors))
+
+            for a in range(num_anchors):
+                for m in range(num_measurements):
+                    # 联合方差 S
+                    S = predicted_uncertainties[a] + measurements[1, m]
+                    # 残差 nu
+                    nu = measurements[0, m] - predicted_measurements[a]
+                    # 高斯似然
+                    likelihood = (1.0 / np.sqrt(2 * np.pi * S)) * np.exp(-0.5 * nu**2 / S)
+                    # 归一化因子
+                    beta_matrix[m, a] = likelihood * (detection_probability / clutter_intensity)
+
+            # --- B. 构建混合特征张量 (M, K, 4) ---
+            legacy_feat = np.zeros((num_measurements, num_anchors, 4))
+
+            for m in range(num_measurements):
+                for a in range(num_anchors):
+                    # Ch0: Log-Prob (物理建议)
+                    legacy_feat[m, a, 0] = np.log(beta_matrix[m, a] + 1e-20)
+
+                    # Ch1: 标准化残差 (GNN纠错核心)
+                    std_dev = np.sqrt(measurements[1, m] + predicted_uncertainties[a])
+                    legacy_feat[m, a, 1] = (measurements[0, m] - predicted_measurements[a]) / (std_dev + 1e-6)
+
+                    # Ch2: 对数方差
+                    legacy_feat[m, a, 2] = np.log(measurements[1, m] + predicted_uncertainties[a] + 1e-6)
+
+                    # Ch3: 存在概率
+                    legacy_feat[m, a, 3] = existence_probs[a]
+
+            # --- C. 构建 New/Clutter 特征 (M, 1, 4) ---
+            new_feat = np.zeros((num_measurements, 1, 4))
+            # 计算 Xi 参考值 (Log域)
+            mu_new = undetected_anchors_intensity[sensor]
+            xi_val = np.log(1.0 + mu_new / clutter_intensity)
+
+            new_feat[:, 0, 0] = xi_val  # Ch0
+            new_feat[:, 0, 1] = 0.0     # Ch1
+            new_feat[:, 0, 2] = 2.0     # Ch2 (背景方差)
+            new_feat[:, 0, 3] = 1.0     # Ch3
+
+            # --- D. GNN 训练与推理 ---
+            use_gnn_result = False
+            message_lhf_ratios = None
+            messages_new = None
+
+            if gnn_trainer is not None and num_anchors > 0 and num_measurements > 0:
+                try:
+                    # 拼接特征
+                    hybrid_input = np.concatenate([legacy_feat, new_feat], axis=1)
+                    hybrid_tensor = torch.from_numpy(hybrid_input).float().unsqueeze(0)
+
+                    # 执行一步自监督训练 (Hard-EM)
+                    gnn_probs, gnn_dustbin, loss = gnn_trainer.step(
+                        hybrid_tensor,
+                        measurements,
+                        predicted_measurements,
+                        predicted_uncertainties
+                    )
+
+                    # 打印 Loss
+                    if step % 10 == 0:
+                        print(f"  [GNN] Sensor {sensor+1}, Step {step}, Loss: {loss:.4f}")
+
+                    # 决策：预热期后使用 GNN 结果
+                    if step > warmup_steps:
+                        use_gnn_result = True
+
+                        # [关键] 将 GNN 概率转换为 BP 消息格式
+                        # message_lhf_ratios: (M, K) 表示测量-锚点关联强度
+                        message_lhf_ratios = gnn_probs / (gnn_dustbin[:, np.newaxis] + 1e-10)
+
+                        # [关键] 新锚点消息：基于杂波概率计算
+                        # 杂波概率高 -> 新锚点可能性低
+                        # 使用指数抑制，防止锚点爆炸
+                        #messages_new = np.exp(-5.0 * gnn_dustbin)  # 指数抑制因子 = 5.0
+
+                        # 额外约束：杂波概率 > 0.6 时，完全禁止新锚点
+                        #messages_new[gnn_dustbin > 0.6] = 1e-10
+
+                        # 新代码 (更温和):
+                        # 1. 降低指数系数 (从 5.0 降到 2.0)，即使 GNN 认为是杂波，也保留一点点出生的可能性
+                        messages_new = np.exp(-0.5 * gnn_dustbin)
+                        
+                        # 2. 完全移除硬截断 (Delete or comment out this line):
+                        # messages_new[gnn_dustbin > 0.6] = 1e-10  <-- 删除这行
+                        
+                        # 3. 增加一个保底值，确保不会发生除零或完全消失
+                        messages_new = np.maximum(messages_new, 1e-6)
+                        
+                except Exception as e:
+                    print(f"  [GNN] Error at step {step}, sensor {sensor}: {e}")
+
+            # --- E. 回退到传统 BP ---
+            if not use_gnn_result:
+                (association_probabilities, association_probabilities_new,
+                 message_lhf_ratios, messages_new) = calculate_association_probabilities_ga(
+                    measurements, predicted_measurements, predicted_uncertainties,
+                    weights_anchor, new_input_bp, parameters
+                )
 
             # 对每个锚点计算粒子权重，结合检测概率和测量似然
             num_anchors = predicted_particles_anchors.shape[2]
             weights = np.zeros((num_particles, num_anchors))
 
-            # 向量化优化：一次性计算所有锚点和测量的权重
+            # 内存安全版：循环处理每个测量，支持高杂波场景
             if num_measurements > 0:
                 # 初始化权重为未检测概率
                 weights[:, :] = (1 - detection_probability)
@@ -158,20 +285,21 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                 factors = (1 / np.sqrt(2 * np.pi * measurement_variances) *
                           detection_probability / clutter_intensity)  # shape: (num_measurements,)
 
-                # 计算距离差: (num_particles, num_anchors, num_measurements)
-                # predicted_range: (num_particles, num_anchors)
-                # measurements[0, :]: (num_measurements,)
-                range_diff = measurements[0, :][np.newaxis, np.newaxis, :] - predicted_range[:, :, np.newaxis]
+                # 循环处理每一个测量，避免创建巨大的3D矩阵
+                for m in range(num_measurements):
+                    z = measurements[0, m]  # 测量距离
+                    R = measurement_variances[m]  # 测量方差
+                    factor = factors[m]  # 归一化因子
+                    # 获取该测量对应的关联比率向量 (num_anchors,)
+                    ratio = message_lhf_ratios[m, :]
 
-                # 计算所有权重贡献: (num_particles, num_anchors, num_measurements)
-                weight_contributions = (
-                    factors[np.newaxis, np.newaxis, :] *
-                    message_lhf_ratios.T[np.newaxis, :, :] *  # message_lhf_ratios是(M,N)，转置后是(N,M)
-                    np.exp(-0.5 / measurement_variances[np.newaxis, np.newaxis, :] * range_diff**2)
-                )
+                    # 计算距离差 (num_particles, num_anchors)
+                    diff = z - predicted_range
 
-                # 对测量维度求和，得到每个锚点的总权重
-                weights += np.sum(weight_contributions, axis=2)
+                    # 累加权重 (利用广播机制)
+                    # factor * ratio[None, :] -> (1, num_anchors)
+                    # exp term -> (num_particles, num_anchors)
+                    weights += (factor * ratio[np.newaxis, :] * np.exp(-0.5 * (diff**2) / R))
             else:
                 # 没有测量时，所有权重为未检测概率
                 weights[:, :] = (1 - detection_probability)

@@ -135,6 +135,10 @@ class BPSLAMVisualizer:
         ax.plot(true_trajectory[0, :], true_trajectory[1, :],
                '-', color=[0.5, 0.5, 0.5], linewidth=1.5, label='True Trajectory')
 
+        # 绘制估计轨迹
+        ax.plot(estimated_trajectory[0, :], estimated_trajectory[1, :],
+               '--', color=[0, 0.5, 0], linewidth=2, label='Estimated Trajectory')
+
         # 绘制每个传感器的锚点
         for sensor in range(num_sensors):
             true_anchor_positions = data_va[sensor]['positions']
