@@ -11,6 +11,8 @@ class FactorGraphNeuralNetwork(nn.Module):
     def __init__(self, input_dim=4, hidden_dim=64, num_layers=2):
         super().__init__()
 
+        self.hidden_dim = hidden_dim
+
         # 1. 特征融合编码器 (Physics-Data Fusion)
         # 将 (LogProb, Residual, Variance, Existence) 映射为 hidden_dim
         self.input_encoder = nn.Sequential(
@@ -25,13 +27,26 @@ class FactorGraphNeuralNetwork(nn.Module):
             BiVariableGNNLayer(hidden_dim) for _ in range(num_layers)
         ])
 
-        # 3. 解码器 - 输出关联分数
-        self.head = nn.Linear(hidden_dim, 1)
+        # 3. [新增] 跨帧全局记忆 GRU
+        # 输入是当前帧的全局特征，输出是更新后的记忆
+        self.gru = nn.GRUCell(hidden_dim, hidden_dim)
 
-    def forward(self, hybrid_input):
+        # 4. [修改] 解码器 - 输出关联分数
+        # 输入维度变大两倍，因为我们要把 (特征 + 记忆) 拼在一起
+        self.head = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+
+    def forward(self, hybrid_input, hidden_state=None):
         """
-        输入: hybrid_input (Batch, M, K+1, 4)
-        输出: logits (Batch, M, K+1)
+        输入:
+            hybrid_input: (Batch, M, K+1, 4)
+            hidden_state: (Batch, hidden_dim) 上一帧的记忆，可选
+        输出:
+            logits: (Batch, M, K+1)
+            new_hidden_state: (Batch, hidden_dim) 更新后的记忆
         """
         # A. 编码特征
         # (B, M, K+1, 4) -> (B, M, K+1, H)
@@ -41,11 +56,32 @@ class FactorGraphNeuralNetwork(nn.Module):
         for layer in self.gnn_layers:
             x = layer(x)
 
-        # C. 解码为 Logits
-        # (B, M, K+1, H) -> (B, M, K+1)
-        logits = self.head(x).squeeze(-1)
+        batch_size, M, K_plus_1, h_dim = x.shape
 
-        return logits
+        # C. [新增] 提取全局环境特征 (Global Pooling)
+        # 我们把所有测量和路标的特征聚合起来，看看当前这一帧"整体长什么样"
+        # 使用 Max Pooling，对捕捉异常(大残差)比较敏感
+        global_feat, _ = torch.max(x.view(batch_size, -1, h_dim), dim=1)  # (Batch, hidden_dim)
+
+        # D. [新增] GRU 记忆更新
+        if hidden_state is None:
+            hidden_state = torch.zeros_like(global_feat)
+
+        # 这里的 hidden_state 包含了过去几十帧的信息
+        new_hidden_state = self.gru(global_feat, hidden_state)  # (Batch, hidden_dim)
+
+        # E. [新增] 特征融合
+        # 把全局记忆扩展，拼回到每一个节点上
+        h_expanded = new_hidden_state.view(batch_size, 1, 1, h_dim).expand(batch_size, M, K_plus_1, h_dim)
+
+        # 拼接: (Batch, M, K+1, hidden_dim * 2)
+        combined_feat = torch.cat([x, h_expanded], dim=-1)
+
+        # F. 解码为 Logits
+        # (B, M, K+1, hidden_dim*2) -> (B, M, K+1)
+        logits = self.head(combined_feat).squeeze(-1)
+
+        return logits, new_hidden_state
 
 class BiVariableGNNLayer(nn.Module):
     """

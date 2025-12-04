@@ -70,8 +70,16 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
         gnn_device = 'cuda' if torch.cuda.is_available() else 'cpu'
         gnn_hidden_dim = parameters.get('gnn_hidden_dim', 64)
         gnn_lr = parameters.get('gnn_lr', 1e-3)
-        gnn_trainer = GNNTrainer(device=gnn_device, lr=gnn_lr, hidden_dim=gnn_hidden_dim)
+        gnn_checkpoint_path = parameters.get('gnn_checkpoint_path', None)
+        gnn_trainer = GNNTrainer(device=gnn_device, lr=gnn_lr, hidden_dim=gnn_hidden_dim,
+                                 checkpoint_path=gnn_checkpoint_path)
+
+        # [关键] 每次开始新序列前，清空 GRU 记忆
+        gnn_trainer.reset_hidden_state()
+
         print(f"GNN Trainer initialized on {gnn_device}, warmup steps: {warmup_steps}")
+        if gnn_checkpoint_path:
+            print(f"  - Loaded checkpoint: {gnn_checkpoint_path}")
 
     # 预分配存储空间
     estimated_trajectory = np.zeros((4, num_steps))  # 状态空间4维：x,y,vx,vy

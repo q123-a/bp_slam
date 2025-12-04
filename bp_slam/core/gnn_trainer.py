@@ -32,9 +32,16 @@ class GNNTrainer:
         # Loss 历史记录
         self.loss_history = []
 
+        # [新增] 跨帧记忆状态
+        self.hidden_state = None
+
         # 如果提供了权重文件，则加载
         if checkpoint_path is not None:
             self.load_checkpoint(checkpoint_path)
+
+    def reset_hidden_state(self):
+        """在新的序列开始时调用，清空 GRU 记忆"""
+        self.hidden_state = None
 
     def step(self, hybrid_tensor, measurements, predicted_measurements, predicted_variances, num_iterations=5):
         """
@@ -55,13 +62,21 @@ class GNNTrainer:
         self.step_count += 1
         hybrid_tensor = hybrid_tensor.to(self.device)
 
+        # [关键修改] 处理 hidden_state 的梯度截断
+        # 我们只做单步更新，或者短时序 BPTT
+        # 在进入 step 之前，必须 detach 掉上一帧的梯度，否则 PyTorch 会试图回传到第 0 步
+        if self.hidden_state is not None:
+            h_in = self.hidden_state.detach()
+        else:
+            h_in = None
+
         # 多次迭代训练
         total_loss = 0.0
         self.model.train()
 
         for iter_idx in range(num_iterations):
-            # 1. 前向推理
-            logits = self.model(hybrid_tensor)  # (1, M, K+1)
+            # 1. [修改] 前向推理 - 接收两个返回值
+            logits, h_out = self.model(hybrid_tensor, h_in)  # (1, M, K+1), (1, hidden_dim)
 
             # 2. 计算自监督 Loss (Hard-EM)
             loss = self._compute_hard_em_loss(
@@ -76,10 +91,18 @@ class GNNTrainer:
 
             total_loss += loss.item()
 
+            # [关键] 在迭代过程中更新 h_in，但要 detach
+            # 这样每次迭代都能利用最新的记忆，但不会累积梯度
+            h_in = h_out.detach()
+
+        # [关键] 更新内部记忆，供下一帧使用
+        # 注意：这里我们存下 h_out，但在下一次 step 开始时我们会 detach 它
+        self.hidden_state = h_out
+
         # 4. 推理模式：解析输出（使用最后一次迭代的结果）
         with torch.no_grad():
             self.model.eval()
-            eval_logits = self.model(hybrid_tensor)
+            eval_logits, _ = self.model(hybrid_tensor, self.hidden_state.detach())
 
             # Softmax 归一化
             all_probs = F.softmax(eval_logits[0], dim=-1)  # (M, K+1)
