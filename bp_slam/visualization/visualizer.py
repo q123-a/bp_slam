@@ -372,7 +372,7 @@ class BPSLAMVisualizer:
         return stats
 
     def visualize_from_file(self, results_file='results/results.npz',
-                           data_file='scenarioCleanM2_new.mat',
+                           data_file='scenarioCleanM2_new901.mat',
                            save=True, show=False):
         """
         从保存的文件加载并可视化（离线模式）
@@ -446,7 +446,7 @@ def visualize_online(true_trajectory, estimated_trajectory, estimated_anchors,
 
 
 def visualize_offline(results_file='results/results.npz',
-                     data_file='scenarioCleanM2_new.mat',
+                     data_file='scenarioCleanM2_new901.mat',
                      scene_file='scen_semroom_new.mat',
                      output_dir='results',
                      save=True, show=False):

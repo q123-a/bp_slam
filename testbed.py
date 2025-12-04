@@ -12,8 +12,64 @@ from bp_slam.utils.measurements import generate_measurements, generate_cluttered
 from bp_slam.core.slam import bp_based_mint_slam
 
 
+def load_measurements_from_mat(mat_file='measurementbadf.mat'):
+    """
+    从 MAT 文件加载预先生成的检测数据，并应用自适应方差计算
+
+    参数:
+        mat_file: MAT 文件路径，默认为 'measurementbadf.mat'
+
+    返回:
+        cluttered_measurements: 检测数据，shape (num_steps, num_sensors) 的列表
+                               每个元素是 (2, num_detections) 的数组（距离+方差）
+    """
+    print(f"从 {mat_file} 加载检测数据...")
+    mat_data = sio.loadmat(mat_file)
+
+    # 加载 estimated_measurements_cell，形状为 (num_steps, num_sensors)
+    measurements_raw = mat_data['estimated_measurements_cell']
+    num_steps, num_sensors = measurements_raw.shape
+
+    # 光速常数 (m/s)
+    SPEED_OF_LIGHT = 3.0e8
+
+    # 固定方差参数
+    min_std = 0.05
+    variance_floor = min_std ** 2  # 0.0025 m^2
+
+    # 初始化输出
+    cluttered_measurements = [[None for _ in range(num_sensors)] for _ in range(num_steps)]
+
+    # 转换数据格式
+    for step in range(num_steps):
+        for sensor in range(num_sensors):
+            mvalse_data = measurements_raw[step, sensor]
+
+            if mvalse_data.size == 0:
+                # 如果没有检测数据，设置为空数组
+                cluttered_measurements[step][sensor] = np.zeros((2, 0))
+            else:
+                # mvalse_data 形状为 (3, num_detections)
+                # 第0行: 时延 (s) - 需要转换为距离
+                # 第1行: 噪声方差估计 (nu) - 暂不使用
+                # 第2行: 信号幅度 (amps) - 暂不使用
+                K_est = mvalse_data.shape[1]
+                tracker_input = np.zeros((2, K_est))
+
+                # 1. 距离 (m) = 时延 (s) × 光速 (m/s)
+                tracker_input[0, :] = mvalse_data[0, :] * SPEED_OF_LIGHT
+
+                # 2. 使用固定方差 0.0025 m^2 (标准差 0.05 m)
+                tracker_input[1, :] = variance_floor
+                cluttered_measurements[step][sensor] = tracker_input
+
+    print(f"✓ 成功加载检测数据: {num_steps} 步, {num_sensors} 个传感器")
+    return cluttered_measurements
+
+
 def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
-         gnn_load_checkpoint=None, gnn_save_checkpoint=True, gnn_inference_only=False):
+         gnn_load_checkpoint=None, gnn_save_checkpoint=True, gnn_inference_only=False,
+         load_measurements=None):
     """
     主测试函数
 
@@ -25,6 +81,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         gnn_load_checkpoint: str or None, GNN权重加载路径 (None表示从头训练)
         gnn_save_checkpoint: bool, 是否保存GNN权重 (默认True)
         gnn_inference_only: bool, 是否仅推理模式 (True=不训练，False=训练)
+        load_measurements: str or None, 检测数据文件路径 (None表示生成新数据，否则从文件加载)
     """
 
     print("=" * 60)
@@ -42,7 +99,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     parameters['known_track'] = 0  # 是否已知轨迹（0表示未知轨迹）
 
     # 加载场景数据，包括虚拟锚点 dataVA 和真实轨迹 trueTrajectory
-    mat_data = sio.loadmat('scenarioCleanM2_new.mat')
+    mat_data = sio.loadmat('scenarioCleanM2_new901.mat')
     data_va_raw = mat_data['dataVA'][:, 0]  # 修复：获取所有传感器数据
     true_trajectory = mat_data['trueTrajectory']
 
@@ -167,16 +224,18 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     parameters['priorMean'] = np.vstack([true_trajectory[0:2, 0:1], np.zeros((2, 1))])  # 初始位置+速度
 
     # ---------------------------
-    # 5. 生成理想测量数据（无杂波）
+    # 5. 获取检测数据（加载或生成）
     # ---------------------------
-    print("生成理想测量数据...")
-    measurements = generate_measurements(true_trajectory, data_va, parameters)
+    if load_measurements is not None:
+        # 从文件加载预先生成的检测数据
+        cluttered_measurements = load_measurements_from_mat(load_measurements)
+    else:
+        # 生成新的检测数据
+        print("生成理想测量数据...")
+        measurements = generate_measurements(true_trajectory, data_va, parameters)
 
-    # ---------------------------
-    # 6. 加入误报和漏检，生成带杂波测量
-    # ---------------------------
-    print("生成带杂波测量数据...")
-    cluttered_measurements = generate_cluttered_measurements(measurements, parameters)
+        print("生成带杂波测量数据...")
+        cluttered_measurements = generate_cluttered_measurements(measurements, parameters)
     
     # ---------------------------
     # 7. 调用核心BP-SLAM算法进行估计
@@ -287,6 +346,8 @@ if __name__ == '__main__':
                         help='不保存GNN权重 (默认会保存)')
     parser.add_argument('--inference-only', action='store_true',
                         help='仅推理模式 (加载权重后不训练，只推理)')
+    parser.add_argument('--load-measurements', type=str, default=None,
+                        help='从MAT文件加载检测数据 (如 measurementbadf.mat), 默认: None (生成新数据)')
 
     args = parser.parse_args()
 
@@ -299,5 +360,6 @@ if __name__ == '__main__':
         gnn_warmup=args.warmup,
         gnn_load_checkpoint=args.load_checkpoint,
         gnn_save_checkpoint=not args.no_save_checkpoint,
-        gnn_inference_only=args.inference_only
+        gnn_inference_only=args.inference_only,
+        load_measurements=args.load_measurements
     )

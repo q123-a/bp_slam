@@ -125,11 +125,30 @@ class GNNTrainer:
         # 找到每一行最小残差
         min_residuals, min_idx = torch.min(normalized_residuals, dim=1)
 
+        
+        '''
         # 阈值判定: 残差 < 1.0σ 才认为是正样本
         SIGMA_THRESHOLD = 3.0
+        ABS_DIST_THRESHOLD = 2.0 # 保底 2.0米
         valid_mask = min_residuals < SIGMA_THRESHOLD
         target_indices[valid_mask] = min_idx[valid_mask]
+        '''
+        # ========================= [修改开始] =========================
+        # 获取对应的绝对距离误差
+        # 既然 min_idx 是最可能的锚点，我们取出它对应的真实距离差
+        abs_diff_mat = torch.abs(diff_mat)
+        row_indices = torch.arange(abs_diff_mat.size(0), device=self.device)
+        selected_abs_dist = abs_diff_mat[row_indices, min_idx]
 
+        # 混合阈值判定 (Hybrid Thresholding)
+        SIGMA_THRESHOLD = 3.0
+        ABS_DIST_THRESHOLD = 2.0 # 保底 2.0米 (容忍多径和漂移)
+
+        # 逻辑或：只要满足 (3倍标准差以内) 或者 (绝对距离小于2米)，都算匹配成功
+        valid_mask = (min_residuals < SIGMA_THRESHOLD) | (selected_abs_dist < ABS_DIST_THRESHOLD)
+        
+        target_indices[valid_mask] = min_idx[valid_mask]
+        # ========================= [修改结束] =========================
         # 4. 计算 CrossEntropy Loss
         loss = F.cross_entropy(logits.view(M, K+1), target_indices, label_smoothing=0.1)
 

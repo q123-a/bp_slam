@@ -79,15 +79,32 @@ def plot_floor_plan(s_scen, ax):
         traceback.print_exc()
 
 def visualize_trajectory_and_anchors(results_file='results/results.npz',
-                                    data_file='scenarioCleanM2_new.mat',
-                                    scene_file='scen_semroom_new.mat'):
+                                    data_file='scenarioCleanM2_new901.mat',
+                                    scene_file='scen_semroom_new.mat',
+                                    output_prefix=None):
     """
     生成图1: 轨迹和锚点可视化（与MATLAB Figure 1相同）
+
+    参数:
+        results_file: 结果文件路径 (npz格式)
+        data_file: 场景数据文件路径
+        scene_file: 场景布局文件路径
+        output_prefix: 输出文件前缀 (如果为None，则从results_file自动推断)
     """
     print("=" * 70)
     print("生成MATLAB风格可视化图表")
+    print(f"结果文件: {results_file}")
     print("=" * 70)
     print()
+
+    # 自动推断输出前缀
+    if output_prefix is None:
+        # 从文件名提取前缀，例如 'results/results_bp.npz' -> 'bp'
+        file_stem = Path(results_file).stem  # 'results_bp'
+        if file_stem.startswith('results_'):
+            output_prefix = file_stem.replace('results_', '')
+        else:
+            output_prefix = file_stem
 
     # 加载结果数据
     print("1. 加载结果数据...")
@@ -196,7 +213,7 @@ def visualize_trajectory_and_anchors(results_file='results/results.npz',
     ax1.set_title('BP-SLAM: Trajectory and Anchor Estimation', fontsize=14)
 
     # 保存图1
-    fig1_path = results_dir / 'figure1_trajectory_anchors.png'
+    fig1_path = results_dir / f'figure1_trajectory_anchors_{output_prefix}.png'
     plt.savefig(fig1_path, dpi=300, bbox_inches='tight')
     print(f"   ✓ 图1已保存: {fig1_path}")
 
@@ -262,7 +279,7 @@ def visualize_trajectory_and_anchors(results_file='results/results.npz',
     ax2.legend(fontsize=10)
 
     # 保存图2
-    fig2_path = results_dir / 'figure2_ospa_error.png'
+    fig2_path = results_dir / f'figure2_ospa_error_{output_prefix}.png'
     plt.savefig(fig2_path, dpi=300, bbox_inches='tight')
     print(f"   ✓ 图2已保存: {fig2_path}")
 
@@ -281,7 +298,7 @@ def visualize_trajectory_and_anchors(results_file='results/results.npz',
     ax3.grid(True, alpha=0.3)
 
     # 保存图3
-    fig3_path = results_dir / 'figure3_position_error.png'
+    fig3_path = results_dir / f'figure3_position_error_{output_prefix}.png'
     plt.savefig(fig3_path, dpi=300, bbox_inches='tight')
     print(f"   ✓ 图3已保存: {fig3_path}")
 
@@ -313,21 +330,53 @@ def visualize_trajectory_and_anchors(results_file='results/results.npz',
     return dist_ospa_map, position_error_agent
 
 if __name__ == '__main__':
-    # 使用快速测试结果（如果存在），否则使用完整测试结果
+    import argparse
     import os
-    if os.path.exists('results/results_quick.npz'):
-        results_file = 'results/results_quick.npz'
-    elif os.path.exists('results/results.npz'):
-        results_file = 'results/results.npz'
-    else:
-        # 兼容旧的文件位置
-        if os.path.exists('results_quick.npz'):
-            results_file = 'results_quick.npz'
+
+    # 命令行参数解析
+    parser = argparse.ArgumentParser(description='可视化 BP-SLAM 结果')
+    parser.add_argument('--results', type=str, default=None,
+                        help='结果文件路径 (如 results/results_bp.npz), 默认: 自动查找')
+    parser.add_argument('--data', type=str, default='scenarioCleanM2_new901.mat',
+                        help='场景数据文件路径, 默认: scenarioCleanM2_new901.mat')
+    parser.add_argument('--scene', type=str, default='scen_semroom_new.mat',
+                        help='场景布局文件路径, 默认: scen_semroom_new.mat')
+    parser.add_argument('--output-prefix', type=str, default=None,
+                        help='输出文件前缀 (如 bp, gnn), 默认: 从结果文件名自动推断')
+
+    args = parser.parse_args()
+
+    # 如果未指定结果文件，自动查找
+    if args.results is None:
+        if os.path.exists('results/results_gnn.npz'):
+            results_file = 'results/results_gnn.npz'
+        elif os.path.exists('results/results_bp.npz'):
+            results_file = 'results/results_bp.npz'
+        elif os.path.exists('results/results_quick.npz'):
+            results_file = 'results/results_quick.npz'
+        elif os.path.exists('results/results.npz'):
+            results_file = 'results/results.npz'
         else:
-            results_file = 'results.npz'
+            # 兼容旧的文件位置
+            if os.path.exists('results_quick.npz'):
+                results_file = 'results_quick.npz'
+            else:
+                results_file = 'results.npz'
+        print(f"自动选择结果文件: {results_file}")
+    else:
+        results_file = args.results
+
+    # 检查文件是否存在
+    if not os.path.exists(results_file):
+        print(f"错误: 结果文件不存在: {results_file}")
+        print("\n可用的命令:")
+        print("  python visualize_results.py --results results/results_bp.npz")
+        print("  python visualize_results.py --results results/results_gnn.npz")
+        exit(1)
 
     visualize_trajectory_and_anchors(
         results_file=results_file,
-        data_file='scenarioCleanM2_new.mat',
-        scene_file='scen_semroom_new.mat'
+        data_file=args.data,
+        scene_file=args.scene,
+        output_prefix=args.output_prefix
     )

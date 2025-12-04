@@ -24,7 +24,7 @@ def load_results(bp_file='results/results_bp.npz', gnn_file='results/results_gnn
     return bp_data, gnn_data
 
 
-def load_true_anchors(data_file='scenarioCleanM2_new.mat'):
+def load_true_anchors(data_file='scenarioCleanM2_new901.mat'):
     """
     加载真实锚点数据
 
@@ -340,7 +340,7 @@ if __name__ == '__main__':
     # 默认文件路径
     bp_file = 'results/results_bp.npz'
     gnn_file = 'results/results_gnn.npz'
-    data_file = 'scenarioCleanM2_new.mat'
+    data_file = 'scenarioCleanM2_new901.mat'
 
     # 检查命令行参数
     if len(sys.argv) > 2:
