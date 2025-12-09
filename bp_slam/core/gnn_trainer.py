@@ -6,27 +6,34 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
+import random
 from pathlib import Path
 from .gnn_model import FactorGraphNeuralNetwork
 
 class GNNTrainer:
-    def __init__(self, device='cuda', lr=1e-3, hidden_dim=64, checkpoint_path=None):
+    def __init__(self, device='cuda', lr=1e-3, hidden_dim=64, checkpoint_path=None, seed=42):
         """
         初始化 GNN 训练器
 
         参数:
             device: 设备 ('cuda' 或 'cpu')
             lr: 学习率
-            hidden_dim: 隐藏层维度
+            hidden_dim: 隐藏层维度 (默认 128)
             checkpoint_path: 权重文件路径 (如果提供，则加载预训练权重)
+            seed: 随机种子 (默认 42)，设为 None 则不固定种子
         """
         self.device = device
         self.hidden_dim = hidden_dim
         self.lr = lr
+        self.seed = seed
 
-        # input_dim=4 (混合特征)
-        self.model = FactorGraphNeuralNetwork(input_dim=4, hidden_dim=hidden_dim).to(device)
-        self.optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-4)
+        # 设置随机种子以确保可复现性
+        if seed is not None:
+            self._set_seed(seed)
+
+        # input_dim=5 (混合特征: LogProb, Residual, Variance, Existence, Amplitude)
+        self.model = FactorGraphNeuralNetwork(input_dim=5, hidden_dim=hidden_dim).to(device)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-5)
         self.step_count = 0
 
         # Loss 历史记录
@@ -39,6 +46,33 @@ class GNNTrainer:
         if checkpoint_path is not None:
             self.load_checkpoint(checkpoint_path)
 
+    def _set_seed(self, seed):
+        """
+        设置所有随机种子以确保可复现性
+
+        参数:
+            seed: 随机种子值
+        """
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)  # 多GPU情况
+
+        # 确保 CUDA 操作的确定性
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+        print(f"✓ 随机种子已设置: {seed}")
+        print(f"  - Python random: {seed}")
+        print(f"  - NumPy: {seed}")
+        print(f"  - PyTorch: {seed}")
+        if torch.cuda.is_available():
+            print(f"  - CUDA: {seed}")
+            print(f"  - cuDNN deterministic: True")
+
     def reset_hidden_state(self):
         """在新的序列开始时调用，清空 GRU 记忆"""
         self.hidden_state = None
@@ -48,11 +82,11 @@ class GNNTrainer:
         执行一步训练/推理（支持多次迭代）
 
         参数:
-            hybrid_tensor: (1, M, K+1, 4) 混合特征张量
-            measurements: (2, M) 测量数据 [距离, 方差]
+            hybrid_tensor: (1, M, K+1, 5) 混合特征张量 [LogProb, Residual, Variance, Existence, Amplitude]
+            measurements: (3, M) 测量数据 [距离, 方差, 幅度]
             predicted_measurements: (K,) 预测测量
             predicted_variances: (K,) 预测方差
-            num_iterations: int, 每个时间步的迭代次数 (默认3次)
+            num_iterations: int, 每个时间步的迭代次数 (默认5次)
 
         返回:
             legacy_probs: (M, K) 锚点关联概率
@@ -121,59 +155,62 @@ class GNNTrainer:
 
     def _compute_hard_em_loss(self, logits, measurements, predicted_measurements, predicted_variances):
         """
-        Hard-EM Loss: 使用几何一致性生成伪标签
+        Hard-EM Loss: 使用几何一致性 + 幅度信息生成伪标签
 
         规则:
-        1. 计算标准化残差 (考虑联合方差)
-        2. 残差 < 1.0σ 且是该测量的最小残差 -> 正样本
-        3. 其他 -> 杂波 (标签 = K)
+        1. 计算标准化残差 (几何一致性)
+        2. 计算幅度一致性 (物理一致性)
+        3. 必须同时满足几何和物理一致性才是正样本
         """
         # 准备数据
-        z_meas = torch.from_numpy(measurements[0, :]).float().to(self.device)  # (M,)
-        z_pred = torch.from_numpy(predicted_measurements).float().to(self.device)  # (K,)
-        var_meas = torch.from_numpy(measurements[1, :]).float().to(self.device)  # (M,)
-        var_pred = torch.from_numpy(predicted_variances).float().to(self.device)  # (K,)
+        z_meas = torch.from_numpy(measurements[0, :]).float().to(self.device)  # (M,) 距离
+        # [新增] 提取幅度
+        z_rss = torch.from_numpy(measurements[2, :]).float().to(self.device)   # 幅度 (M,)
 
-        # 1. 计算联合标准差
-        joint_std = torch.sqrt(var_meas.unsqueeze(1) + var_pred.unsqueeze(0))  # (M, K)
+        z_pred = torch.from_numpy(predicted_measurements).float().to(self.device) # 预测距离 (K,)
+        var_meas = torch.from_numpy(measurements[1, :]).float().to(self.device)
+        var_pred = torch.from_numpy(predicted_variances).float().to(self.device)
 
-        # 2. 计算标准化残差
-        diff_mat = z_meas.unsqueeze(1) - z_pred.unsqueeze(0)  # (M, K)
+        # 1. 计算联合标准差 & 几何残差 (保持不变)
+        joint_std = torch.sqrt(var_meas.unsqueeze(1) + var_pred.unsqueeze(0))
+        diff_mat = z_meas.unsqueeze(1) - z_pred.unsqueeze(0)
         normalized_residuals = torch.abs(diff_mat) / (joint_std + 1e-6)
 
-        # 3. 生成伪标签
-        M, K = normalized_residuals.shape
-        target_indices = torch.full((M,), K, dtype=torch.long, device=self.device)  # 默认全是杂波
-
-        # 找到每一行最小残差
+        # 2. 找到几何上最近的锚点
         min_residuals, min_idx = torch.min(normalized_residuals, dim=1)
 
-        
-        '''
-        # 阈值判定: 残差 < 1.0σ 才认为是正样本
-        SIGMA_THRESHOLD = 3.0
-        ABS_DIST_THRESHOLD = 2.0 # 保底 2.0米
-        valid_mask = min_residuals < SIGMA_THRESHOLD
-        target_indices[valid_mask] = min_idx[valid_mask]
-        '''
-        # ========================= [修改开始] =========================
-        # 获取对应的绝对距离误差
-        # 既然 min_idx 是最可能的锚点，我们取出它对应的真实距离差
-        abs_diff_mat = torch.abs(diff_mat)
-        row_indices = torch.arange(abs_diff_mat.size(0), device=self.device)
-        selected_abs_dist = abs_diff_mat[row_indices, min_idx]
+        # === [新增] 计算幅度一致性 ===
+        P_tx = 15.41  # 校准后的发射功率 (dBm)
+        n = 2.0
+        # 根据预测距离算出理论幅度
+        safe_pred_dist = torch.clamp(z_pred, min=0.1)
+        rss_pred = P_tx - 10 * n * torch.log10(safe_pred_dist) # (K,)
 
-        # 混合阈值判定 (Hybrid Thresholding)
-        SIGMA_THRESHOLD = 3.0
-        ABS_DIST_THRESHOLD = 2.0 # 保底 2.0米 (容忍多径和漂移)
+        # 计算幅度差 (M, K)
+        rss_diff_mat = rss_pred.unsqueeze(0) - z_rss.unsqueeze(1)
 
-        # 逻辑或：只要满足 (3倍标准差以内) 或者 (绝对距离小于2米)，都算匹配成功
-        valid_mask = (min_residuals < SIGMA_THRESHOLD) | (selected_abs_dist < ABS_DIST_THRESHOLD)
-        
+        # 提取最佳几何匹配对应的幅度差 (M,)
+        # 我们只关心那个距离最近的锚点，它的幅度对不对
+        selected_rss_diff = torch.gather(rss_diff_mat, 1, min_idx.unsqueeze(1)).squeeze(1)
+
+        # === [修改] 判定逻辑 ===
+        target_indices = torch.full((z_meas.shape[0],), predicted_measurements.shape[0], dtype=torch.long, device=self.device)
+
+        # 规则 A: 几何上要吻合 (3倍标准差 或 2米内)
+        is_geo_valid = (min_residuals < 3.0) | (torch.abs(torch.gather(diff_mat, 1, min_idx.unsqueeze(1)).squeeze(1)) < 2.0)
+
+        # 规则 B: 物理上要吻合 (幅度差不能太大)
+        # 允许 10dB 的误差。如果衰减超过 10dB，说明是反射/遮挡
+        # 注意：这里取绝对值或者单边判断都可以，通常 ghost 是衰减大，所以 diff 是正的大值
+        is_phy_valid = selected_rss_diff < 10.0
+
+        # [核心] 满足任一条件即可为正样本（OR 逻辑）
+        valid_mask = is_geo_valid | is_phy_valid
+
         target_indices[valid_mask] = min_idx[valid_mask]
-        # ========================= [修改结束] =========================
-        # 4. 计算 CrossEntropy Loss
-        loss = F.cross_entropy(logits.view(M, K+1), target_indices, label_smoothing=0.1)
+
+        # 4. 计算 Loss (保持不变)
+        loss = F.cross_entropy(logits.view(z_meas.shape[0], -1), target_indices, label_smoothing=0.1)
 
         return loss
 

@@ -35,17 +35,19 @@ class BPSLAMVisualizer:
     2. 离线模式：从保存的.npz文件加载数据
     """
 
-    def __init__(self, scene_file='scen_semroom_new.mat', output_dir='results'):
+    def __init__(self, scene_file='scen_semroom_new.mat', output_dir='results', mode='bp'):
         """
         初始化可视化器
 
         参数:
             scene_file: 场景文件路径（包含房间平面图）
             output_dir: 输出目录
+            mode: 运行模式 ('bp' 或 'gnn')，用于区分保存的图片文件名
         """
         self.scene_file = scene_file
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
+        self.mode = mode.lower()  # 'bp' 或 'gnn'
 
         # 加载场景数据
         self.s_scen = self._load_scene_data()
@@ -313,7 +315,7 @@ class BPSLAMVisualizer:
             posterior_particles_anchors, data_va, parameters
         )
         if save:
-            fig1_path = self.output_dir / 'figure1_trajectory_anchors.png'
+            fig1_path = self.output_dir / f'figure1_trajectory_anchors_{self.mode}.png'
             fig1.savefig(fig1_path, dpi=300, bbox_inches='tight')
             print(f"   ✓ 图1已保存: {fig1_path}")
 
@@ -324,7 +326,7 @@ class BPSLAMVisualizer:
             data_va, parameters
         )
         if save:
-            fig2_path = self.output_dir / 'figure2_ospa_error.png'
+            fig2_path = self.output_dir / f'figure2_ospa_error_{self.mode}.png'
             fig2.savefig(fig2_path, dpi=300, bbox_inches='tight')
             print(f"   ✓ 图2已保存: {fig2_path}")
 
@@ -334,7 +336,7 @@ class BPSLAMVisualizer:
             true_trajectory, estimated_trajectory
         )
         if save:
-            fig3_path = self.output_dir / 'figure3_position_error.png'
+            fig3_path = self.output_dir / f'figure3_position_error_{self.mode}.png'
             fig3.savefig(fig3_path, dpi=300, bbox_inches='tight')
             print(f"   ✓ 图3已保存: {fig3_path}")
 
@@ -372,7 +374,7 @@ class BPSLAMVisualizer:
         return stats
 
     def visualize_from_file(self, results_file='results/results.npz',
-                           data_file='scenarioCleanM2_new901.mat',
+                           data_file='scenarioCleanM2_new_1500.mat',
                            save=True, show=False):
         """
         从保存的文件加载并可视化（离线模式）
@@ -446,7 +448,7 @@ def visualize_online(true_trajectory, estimated_trajectory, estimated_anchors,
 
 
 def visualize_offline(results_file='results/results.npz',
-                     data_file='scenarioCleanM2_new901.mat',
+                     data_file='scenarioCleanM2_new_1500.mat',
                      scene_file='scen_semroom_new.mat',
                      output_dir='results',
                      save=True, show=False):

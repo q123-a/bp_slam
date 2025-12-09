@@ -79,7 +79,7 @@ def plot_floor_plan(s_scen, ax):
         traceback.print_exc()
 
 def visualize_trajectory_and_anchors(results_file='results/results.npz',
-                                    data_file='scenarioCleanM2_new901.mat',
+                                    data_file='scenarioCleanM2_new_1500.mat',
                                     scene_file='scen_semroom_new.mat',
                                     output_prefix=None):
     """
@@ -337,8 +337,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='可视化 BP-SLAM 结果')
     parser.add_argument('--results', type=str, default=None,
                         help='结果文件路径 (如 results/results_bp.npz), 默认: 自动查找')
-    parser.add_argument('--data', type=str, default='scenarioCleanM2_new901.mat',
-                        help='场景数据文件路径, 默认: scenarioCleanM2_new901.mat')
+    parser.add_argument('--data', type=str, default='scenarioCleanM2_new_1500.mat',
+                        help='场景数据文件路径, 默认: scenascenarioCleanM2_new_1500.mat
     parser.add_argument('--scene', type=str, default='scen_semroom_new.mat',
                         help='场景布局文件路径, 默认: scen_semroom_new.mat')
     parser.add_argument('--output-prefix', type=str, default=None,

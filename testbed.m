@@ -3,7 +3,7 @@ close all;
 
 % general parameters
 parameters.known_track = 0;
-%load('scenarioCleanM2_new901.mat');
+%load('scenarioCleanM2_new_1500.mat');
  load('scenarioCleanM2_new901901.mat');
 % cast visibilities to 1
 [numSensors, ~] = size(dataVA);

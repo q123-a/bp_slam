@@ -37,7 +37,7 @@ pip install -r requirements.txt
 Copy MATLAB data files to the project root:
 
 ```bash
-cp ../scenarioCleanM2_new901.mat .
+cp ../scenarioCleanM2_new_1500.mat .
 cp ../scen_semroom_new.mat .
 ```
 
@@ -170,7 +170,7 @@ parameters = {
 ### 1. 检查数据加载
 ```python
 import scipy.io as sio
-data = sio.loadmat('scenarioCleanM2_new901.mat')
+data = sio.loadmat('scenarioCleanM2_new_1500.mat')
 print(data.keys())  # 查看包含的变量
 ```
 
@@ -197,7 +197,7 @@ from bp_slam.core.slam import bp_based_mint_slam
 from bp_slam.utils.measurements import generate_measurements, generate_cluttered_measurements
 
 # 1. 加载数据
-mat_data = sio.loadmat('scenarioCleanM2_new901.mat')
+mat_data = sio.loadmat('scenarioCleanM2_new_1500.mat')
 data_va = mat_data['dataVA'][0]
 true_trajectory = mat_data['trueTrajectory']
 

@@ -19,7 +19,7 @@ from .association import calculate_association_probabilities_ga
 # FGNN 相关导入
 try:
     import torch
-    from .gnn_trainer import GNNTrainer
+    from .gnn_trainer_improved import GNNTrainerImproved
     FGNN_AVAILABLE = True
 except ImportError:
     FGNN_AVAILABLE = False
@@ -69,15 +69,37 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
     if use_gnn and FGNN_AVAILABLE:
         gnn_device = 'cuda' if torch.cuda.is_available() else 'cpu'
         gnn_hidden_dim = parameters.get('gnn_hidden_dim', 64)
-        gnn_lr = parameters.get('gnn_lr', 1e-3)
+        gnn_lr = parameters.get('gnn_lr', 1e-4)
         gnn_checkpoint_path = parameters.get('gnn_checkpoint_path', None)
-        gnn_trainer = GNNTrainer(device=gnn_device, lr=gnn_lr, hidden_dim=gnn_hidden_dim,
-                                 checkpoint_path=gnn_checkpoint_path)
+
+        # [改进版] 新增参数
+        gnn_use_ema = parameters.get('gnn_use_ema', True)
+        gnn_ema_decay = parameters.get('gnn_ema_decay', 0.999)
+        gnn_use_lr_scheduler = parameters.get('gnn_use_lr_scheduler', True)
+        gnn_pseudo_label_mode = parameters.get('gnn_pseudo_label_mode', 'and')
+        gnn_confidence_weighting = parameters.get('gnn_confidence_weighting', True)
+        gnn_use_temporal_gru = parameters.get('gnn_use_temporal_gru', False)  # 默认关闭跨帧GRU
+        gnn_use_layer_gru = parameters.get('gnn_use_layer_gru', False)  # 默认关闭层内GRU
+
+        gnn_trainer = GNNTrainerImproved(
+            device=gnn_device,
+            lr=gnn_lr,
+            hidden_dim=gnn_hidden_dim,
+            checkpoint_path=gnn_checkpoint_path,
+            seed=42,
+            use_ema=gnn_use_ema,
+            ema_decay=gnn_ema_decay,
+            use_lr_scheduler=gnn_use_lr_scheduler,
+            pseudo_label_mode=gnn_pseudo_label_mode,
+            confidence_weighting=gnn_confidence_weighting,
+            use_temporal_gru=gnn_use_temporal_gru,
+            use_layer_gru=gnn_use_layer_gru
+        )
 
         # [关键] 每次开始新序列前，清空 GRU 记忆
         gnn_trainer.reset_hidden_state()
 
-        print(f"GNN Trainer initialized on {gnn_device}, warmup steps: {warmup_steps}")
+        print(f"GNN Trainer (Improved) initialized on {gnn_device}, warmup steps: {warmup_steps}")
         if gnn_checkpoint_path:
             print(f"  - Loaded checkpoint: {gnn_checkpoint_path}")
 
@@ -190,10 +212,27 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     # 归一化因子
                     beta_matrix[m, a] = likelihood * (detection_probability / clutter_intensity)
 
-            # --- B. 构建混合特征张量 (M, K, 4) ---
-            legacy_feat = np.zeros((num_measurements, num_anchors, 4))
+            # --- B. 构建混合特征张量 (M, K, 5) ---
+            legacy_feat = np.zeros((num_measurements, num_anchors, 5))
 
             for m in range(num_measurements):
+                # === [新增] 第5个特征：幅度残差 ===
+                # 提取测量幅度
+                if measurements.shape[0] >= 3:
+                    rss_meas = measurements[2, m]  # 标量
+                else:
+                    rss_meas = 0.0
+
+                # 计算预测幅度
+                P_tx = 15.41  # 校准后的发射功率 (dBm)
+                n = 2.0
+                safe_pred = np.maximum(predicted_measurements, 0.1)
+                rss_pred = P_tx - 10 * n * np.log10(safe_pred)  # 向量 (K,)
+
+                # 计算残差并归一化
+                # 除以 10 是为了让数值范围大致在 -1 到 1 之间
+                feat_amp_diff = (rss_meas - rss_pred) / 10.0
+
                 for a in range(num_anchors):
                     # Ch0: Log-Prob (物理建议)
                     legacy_feat[m, a, 0] = np.log(beta_matrix[m, a] + 1e-20)
@@ -208,8 +247,11 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     # Ch3: 存在概率
                     legacy_feat[m, a, 3] = existence_probs[a]
 
-            # --- C. 构建 New/Clutter 特征 (M, 1, 4) ---
-            new_feat = np.zeros((num_measurements, 1, 4))
+                    # Ch4: [新] 幅度残差
+                    legacy_feat[m, a, 4] = feat_amp_diff[a]
+
+            # --- C. 构建 New/Clutter 特征 (M, 1, 5) ---
+            new_feat = np.zeros((num_measurements, 1, 5))
             # 计算 Xi 参考值 (Log域)
             mu_new = undetected_anchors_intensity[sensor]
             xi_val = np.log(1.0 + mu_new / clutter_intensity)
@@ -218,6 +260,7 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
             new_feat[:, 0, 1] = 0.0     # Ch1
             new_feat[:, 0, 2] = 2.0     # Ch2 (背景方差)
             new_feat[:, 0, 3] = 1.0     # Ch3
+            new_feat[:, 0, 4] = 0.5     # Ch4 (杂波的默认幅度)
 
             # --- D. GNN 训练与推理 ---
             use_gnn_result = False

@@ -47,20 +47,24 @@ def load_measurements_from_mat(mat_file='measurementbadf.mat'):
 
             if mvalse_data.size == 0:
                 # 如果没有检测数据，设置为空数组
-                cluttered_measurements[step][sensor] = np.zeros((2, 0))
+                cluttered_measurements[step][sensor] = np.zeros((3, 0))
             else:
                 # mvalse_data 形状为 (3, num_detections)
                 # 第0行: 时延 (s) - 需要转换为距离
-                # 第1行: 噪声方差估计 (nu) - 暂不使用
-                # 第2行: 信号幅度 (amps) - 暂不使用
+                # 第1行: 噪声功率 (power) - 暂不使用，使用固定方差
+                # 第2行: 信号幅度 (amplitude) - 用于GNN特征
                 K_est = mvalse_data.shape[1]
-                tracker_input = np.zeros((2, K_est))
+                tracker_input = np.zeros((3, K_est))
 
                 # 1. 距离 (m) = 时延 (s) × 光速 (m/s)
                 tracker_input[0, :] = mvalse_data[0, :] * SPEED_OF_LIGHT
 
                 # 2. 使用固定方差 0.0025 m^2 (标准差 0.05 m)
                 tracker_input[1, :] = variance_floor
+
+                # 3. 信号幅度 (保留原始值)
+                tracker_input[2, :] = mvalse_data[2, :]
+
                 cluttered_measurements[step][sensor] = tracker_input
 
     print(f"✓ 成功加载检测数据: {num_steps} 步, {num_sensors} 个传感器")
@@ -99,7 +103,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     parameters['known_track'] = 0  # 是否已知轨迹（0表示未知轨迹）
 
     # 加载场景数据，包括虚拟锚点 dataVA 和真实轨迹 trueTrajectory
-    mat_data = sio.loadmat('scenarioCleanM2_new901.mat')
+    mat_data = sio.loadmat('scenarioCleanM2_new_1500.mat')
     data_va_raw = mat_data['dataVA'][:, 0]  # 修复：获取所有传感器数据
     true_trajectory = mat_data['trueTrajectory']
 
@@ -189,7 +193,18 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
             warmup_source = "自动计算"
 
         parameters['gnn_hidden_dim'] = 64  # 隐藏层维度
-        parameters['gnn_lr'] = 1e-4  # 学习率
+        parameters['gnn_lr'] = 1e-5  # 学习率 (进一步降低到1e-5，最大化稳定性)
+
+        # [改进版] 新增参数 - 针对连续凸起问题优化
+        parameters['gnn_use_ema'] = True  # 使用指数移动平均
+        parameters['gnn_ema_decay'] = 0.9995  # EMA衰减率 (从0.999增强到0.9995，更强平滑)
+        parameters['gnn_use_lr_scheduler'] = True  # 使用学习率调度器
+        parameters['gnn_pseudo_label_mode'] = 'or'  # 伪标签模式: 'and', 'or', 'adaptive'
+        parameters['gnn_confidence_weighting'] = True  # 置信度加权损失
+
+        # [关键] GRU控制参数 - 开启GRU + 其他优化的组合
+        parameters['gnn_use_temporal_gru'] = True  # 跨帧GRU记忆 (开启，结合EMA平滑)
+        parameters['gnn_use_layer_gru'] = True  # 层内GRU更新 (开启，增强表达能力)
 
         # 权重加载和保存配置
         parameters['gnn_checkpoint_path'] = gnn_load_checkpoint
@@ -197,9 +212,16 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         parameters['gnn_checkpoint_save_path'] = 'checkpoints/gnn_model.pth'
         parameters['gnn_inference_only'] = gnn_inference_only
 
-        print(f"\n[GNN 配置] 预热步数: {parameters['gnn_warmup_steps']} ({warmup_source}), "
-              f"隐藏维度: {parameters['gnn_hidden_dim']}, "
-              f"学习率: {parameters['gnn_lr']}")
+        print(f"\n[GNN 配置 - 改进版 (GRU + 优化)]")
+        print(f"  - 预热步数: {parameters['gnn_warmup_steps']} ({warmup_source})")
+        print(f"  - 隐藏维度: {parameters['gnn_hidden_dim']}")
+        print(f"  - 学习率: {parameters['gnn_lr']}")
+        print(f"  - EMA: {parameters['gnn_use_ema']} (decay={parameters['gnn_ema_decay']})")
+        print(f"  - 学习率调度: {parameters['gnn_use_lr_scheduler']}")
+        print(f"  - 伪标签模式: {parameters['gnn_pseudo_label_mode']}")
+        print(f"  - 置信度加权: {parameters['gnn_confidence_weighting']}")
+        print(f"  - 跨帧GRU: {parameters['gnn_use_temporal_gru']} (关闭以避免错误传播)")
+        print(f"  - 层内GRU: {parameters['gnn_use_layer_gru']} (关闭以简化模型)")
 
         if gnn_load_checkpoint:
             print(f"  - 加载权重: {gnn_load_checkpoint}")
