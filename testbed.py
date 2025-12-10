@@ -99,7 +99,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     parameters['known_track'] = 0  # 是否已知轨迹（0表示未知轨迹）
 
     # 加载场景数据，包括虚拟锚点 dataVA 和真实轨迹 trueTrajectory
-    mat_data = sio.loadmat('scenarioCleanM2_new901.mat')
+    mat_data = sio.loadmat('scenarioCleanM2_new_1500.mat')
     data_va_raw = mat_data['dataVA'][:, 0]  # 修复：获取所有传感器数据
     true_trajectory = mat_data['trueTrajectory']
 
@@ -188,8 +188,8 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
             parameters['gnn_warmup_steps'] = int(max_steps * warmup_ratio)
             warmup_source = "自动计算"
 
-        parameters['gnn_hidden_dim'] = 64  # 隐藏层维度
-        parameters['gnn_lr'] = 1e-4  # 学习率
+        parameters['gnn_hidden_dim'] = 128  # 隐藏层维度
+        parameters['gnn_lr'] = 5e-5  # 学习率 (降低以提高稳定性)
 
         # 权重加载和保存配置
         parameters['gnn_checkpoint_path'] = gnn_load_checkpoint
@@ -254,9 +254,10 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     if num_sensors > 1:
         print(f"最终估计的锚点数量 - 传感器2: {num_estimated_anchors[1, -1]}")
 
-    # 计算误差统计
+    # 计算误差统计（确保长度一致）
+    num_steps = min(true_trajectory.shape[1], estimated_trajectory.shape[1])
     errors = np.linalg.norm(
-        true_trajectory[0:2, :] - estimated_trajectory[0:2, :], axis=0
+        true_trajectory[0:2, :num_steps] - estimated_trajectory[0:2, :num_steps], axis=0
     )
     mean_error = np.mean(errors)
     max_error = np.max(errors)

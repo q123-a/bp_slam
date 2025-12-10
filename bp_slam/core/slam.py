@@ -68,7 +68,7 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
 
     if use_gnn and FGNN_AVAILABLE:
         gnn_device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        gnn_hidden_dim = parameters.get('gnn_hidden_dim', 64)
+        gnn_hidden_dim = parameters.get('gnn_hidden_dim', 128)
         gnn_lr = parameters.get('gnn_lr', 1e-3)
         gnn_checkpoint_path = parameters.get('gnn_checkpoint_path', None)
         gnn_trainer = GNNTrainer(device=gnn_device, lr=gnn_lr, hidden_dim=gnn_hidden_dim,
@@ -190,8 +190,13 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     # 归一化因子
                     beta_matrix[m, a] = likelihood * (detection_probability / clutter_intensity)
 
-            # --- B. 构建混合特征张量 (M, K, 4) ---
-            legacy_feat = np.zeros((num_measurements, num_anchors, 4))
+            # --- B. 构建混合特征张量 (M, K, 5) ---
+            legacy_feat = np.zeros((num_measurements, num_anchors, 5))
+
+            # 物理常数（用于RSS计算）
+            c = 3.0e8
+            f_carrier = 28e9
+            P_ref = 10 * np.log10(c / (4 * np.pi * f_carrier))
 
             for m in range(num_measurements):
                 for a in range(num_anchors):
@@ -208,8 +213,26 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     # Ch3: 存在概率
                     legacy_feat[m, a, 3] = existence_probs[a]
 
-            # --- C. 构建 New/Clutter 特征 (M, 1, 4) ---
-            new_feat = np.zeros((num_measurements, 1, 4))
+                    # Ch4: RSS残差 (新增幅度信息)
+                    if measurements.shape[0] >= 3:
+                        # 测量的RSS (从线性幅度转换为dB)
+                        z_rss_linear = measurements[2, m]
+                        z_rss_power = max(z_rss_linear ** 2, 1e-10)
+                        z_rss_db = 10 * np.log10(z_rss_power)
+
+                        # 预测的RSS (基于Friis公式)
+                        pred_dist = max(predicted_measurements[a], 0.1)
+                        rss_pred_db = P_ref - 10 * np.log10(pred_dist)
+
+                        # 标准化RSS残差
+                        rss_residual = (z_rss_db - rss_pred_db) / 10.0  # 除以10归一化
+                        legacy_feat[m, a, 4] = rss_residual
+                    else:
+                        # 没有幅度信息时，设为0
+                        legacy_feat[m, a, 4] = 0.0
+
+            # --- C. 构建 New/Clutter 特征 (M, 1, 5) ---
+            new_feat = np.zeros((num_measurements, 1, 5))
             # 计算 Xi 参考值 (Log域)
             mu_new = undetected_anchors_intensity[sensor]
             xi_val = np.log(1.0 + mu_new / clutter_intensity)
@@ -218,6 +241,7 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
             new_feat[:, 0, 1] = 0.0     # Ch1
             new_feat[:, 0, 2] = 2.0     # Ch2 (背景方差)
             new_feat[:, 0, 3] = 1.0     # Ch3
+            new_feat[:, 0, 4] = 0.0     # Ch4 (杂波没有RSS信息)
 
             # --- D. GNN 训练与推理 ---
             use_gnn_result = False

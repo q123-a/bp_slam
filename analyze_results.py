@@ -27,26 +27,28 @@ def analyze_results(results_file):
 
     true_trajectory = data['true_trajectory']
     estimated_trajectory = data['estimated_trajectory']
-    num_steps = true_trajectory.shape[1]
+
+    # 确保长度一致
+    num_steps = min(true_trajectory.shape[1], estimated_trajectory.shape[1])
 
     # 1. 计算位置误差 (每个时间步)
     position_errors = np.linalg.norm(
-        true_trajectory[0:2, :] - estimated_trajectory[0:2, :],
+        true_trajectory[0:2, :num_steps] - estimated_trajectory[0:2, :num_steps],
         axis=0
     )
 
     # 2. 计算速度误差 (如果有速度信息)
     if true_trajectory.shape[0] >= 4 and estimated_trajectory.shape[0] >= 4:
         velocity_errors = np.linalg.norm(
-            true_trajectory[2:4, :] - estimated_trajectory[2:4, :],
+            true_trajectory[2:4, :num_steps] - estimated_trajectory[2:4, :num_steps],
             axis=0
         )
     else:
         velocity_errors = None
 
     # 3. 计算 X 和 Y 方向的误差
-    x_errors = true_trajectory[0, :] - estimated_trajectory[0, :]
-    y_errors = true_trajectory[1, :] - estimated_trajectory[1, :]
+    x_errors = true_trajectory[0, :num_steps] - estimated_trajectory[0, :num_steps]
+    y_errors = true_trajectory[1, :num_steps] - estimated_trajectory[1, :num_steps]
 
     # 4. 统计信息
     stats = {

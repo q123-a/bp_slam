@@ -8,13 +8,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class FactorGraphNeuralNetwork(nn.Module):
-    def __init__(self, input_dim=4, hidden_dim=64, num_layers=2):
+    def __init__(self, input_dim=5, hidden_dim=128, num_layers=3):
         super().__init__()
 
         self.hidden_dim = hidden_dim
 
         # 1. 特征融合编码器 (Physics-Data Fusion)
-        # 将 (LogProb, Residual, Variance, Existence) 映射为 hidden_dim
+        # 将 (LogProb, Residual, Variance, Existence, RSS_Residual) 映射为 hidden_dim
         self.input_encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),

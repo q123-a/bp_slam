@@ -10,7 +10,7 @@ from pathlib import Path
 from .gnn_model import FactorGraphNeuralNetwork
 
 class GNNTrainer:
-    def __init__(self, device='cuda', lr=1e-3, hidden_dim=64, checkpoint_path=None):
+    def __init__(self, device='cuda', lr=1e-3, hidden_dim=128, checkpoint_path=None):
         """
         初始化 GNN 训练器
 
@@ -24,8 +24,8 @@ class GNNTrainer:
         self.hidden_dim = hidden_dim
         self.lr = lr
 
-        # input_dim=4 (混合特征)
-        self.model = FactorGraphNeuralNetwork(input_dim=4, hidden_dim=hidden_dim).to(device)
+        # input_dim=5 (混合特征: LogProb, Residual, Variance, Existence, RSS_Residual)
+        self.model = FactorGraphNeuralNetwork(input_dim=5, hidden_dim=hidden_dim).to(device)
         self.optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-4)
         self.step_count = 0
 
@@ -48,11 +48,11 @@ class GNNTrainer:
         执行一步训练/推理（支持多次迭代）
 
         参数:
-            hybrid_tensor: (1, M, K+1, 4) 混合特征张量
-            measurements: (2, M) 测量数据 [距离, 方差]
+            hybrid_tensor: (1, M, K+1, 5) 混合特征张量 [LogProb, Residual, Variance, Existence, RSS_Residual]
+            measurements: (3, M) 测量数据 [距离, 方差, 幅度]
             predicted_measurements: (K,) 预测测量
             predicted_variances: (K,) 预测方差
-            num_iterations: int, 每个时间步的迭代次数 (默认3次)
+            num_iterations: int, 每个时间步的迭代次数 (默认5次)
 
         返回:
             legacy_probs: (M, K) 锚点关联概率
@@ -129,49 +129,80 @@ class GNNTrainer:
         3. 其他 -> 杂波 (标签 = K)
         """
         # 准备数据
-        z_meas = torch.from_numpy(measurements[0, :]).float().to(self.device)  # (M,)
+        z_meas = torch.from_numpy(measurements[0, :]).float().to(self.device)  # (M,) 距离
         z_pred = torch.from_numpy(predicted_measurements).float().to(self.device)  # (K,)
         var_meas = torch.from_numpy(measurements[1, :]).float().to(self.device)  # (M,)
         var_pred = torch.from_numpy(predicted_variances).float().to(self.device)  # (K,)
 
-        # 1. 计算联合标准差
-        joint_std = torch.sqrt(var_meas.unsqueeze(1) + var_pred.unsqueeze(0))  # (M, K)
+        # 检查是否有幅度信息（第3行）
+        has_amplitude = measurements.shape[0] >= 3
+        if has_amplitude:
+            z_rss_linear = torch.from_numpy(measurements[2, :]).float().to(self.device)  # (M,) 线性幅度
+            # 转换为dB: RSS(dB) = 10*log10(power)
+            # 注意：测量数据中的幅度是 sqrt(power)，所以 power = amplitude^2
+            z_rss_power = z_rss_linear ** 2  # 功率
+            # 避免log(0)
+            z_rss_power = torch.clamp(z_rss_power, min=1e-10)
+            z_rss = 10 * torch.log10(z_rss_power)  # (M,) dB
 
-        # 2. 计算标准化残差
+        # 1. 计算几何一致性
+        joint_std = torch.sqrt(var_meas.unsqueeze(1) + var_pred.unsqueeze(0))  # (M, K)
         diff_mat = z_meas.unsqueeze(1) - z_pred.unsqueeze(0)  # (M, K)
         normalized_residuals = torch.abs(diff_mat) / (joint_std + 1e-6)
+
+        # 找到几何上最近的锚点
+        min_residuals, min_idx = torch.min(normalized_residuals, dim=1)
+
+        # 2. 计算幅度一致性（如果有幅度数据）
+        row_indices = torch.arange(z_meas.size(0), device=self.device)
+
+        if has_amplitude:
+            # 使用zb物理模型
+            # zb模型: sigma_k_sq = c / (4 * pi * dist * f_carrier)
+            # RSS(dB) = 10*log10(sigma_k_sq) = 10*log10(c/(4*pi*f)) - 10*log10(dist)
+            c = 3.0e8  # 光速
+            f_carrier = 28e9  # 28 GHz载波频率
+
+            # 计算预测的RSS（基于物理模型）
+            # P_ref = 10*log10(c/(4*pi*f))
+            P_ref = 10 * torch.log10(torch.tensor(c / (4 * 3.14159 * f_carrier), device=self.device))
+
+            # 预测RSS: P_ref - 10*log10(dist)
+            safe_pred_dist = torch.clamp(z_pred, min=0.1)  # 避免log(0)
+            rss_pred = P_ref - 10 * torch.log10(safe_pred_dist)  # (K,) dB
+
+            # 计算RSS差异矩阵
+            rss_diff_mat = torch.abs(rss_pred.unsqueeze(0) - z_rss.unsqueeze(1))  # (M, K)
+
+            # 获取几何最近锚点对应的RSS差异
+            selected_rss_diff = rss_diff_mat[row_indices, min_idx]
 
         # 3. 生成伪标签
         M, K = normalized_residuals.shape
         target_indices = torch.full((M,), K, dtype=torch.long, device=self.device)  # 默认全是杂波
 
-        # 找到每一行最小残差
-        min_residuals, min_idx = torch.min(normalized_residuals, dim=1)
-
-        
-        '''
-        # 阈值判定: 残差 < 1.0σ 才认为是正样本
-        SIGMA_THRESHOLD = 3.0
-        ABS_DIST_THRESHOLD = 2.0 # 保底 2.0米
-        valid_mask = min_residuals < SIGMA_THRESHOLD
-        target_indices[valid_mask] = min_idx[valid_mask]
-        '''
-        # ========================= [修改开始] =========================
         # 获取对应的绝对距离误差
-        # 既然 min_idx 是最可能的锚点，我们取出它对应的真实距离差
         abs_diff_mat = torch.abs(diff_mat)
-        row_indices = torch.arange(abs_diff_mat.size(0), device=self.device)
         selected_abs_dist = abs_diff_mat[row_indices, min_idx]
 
-        # 混合阈值判定 (Hybrid Thresholding)
-        SIGMA_THRESHOLD = 3.0
-        ABS_DIST_THRESHOLD = 2.0 # 保底 2.0米 (容忍多径和漂移)
+        # 混合阈值判定 (几何 + 幅度) - AND模式
+        SIGMA_THRESHOLD = 2.0  # 2σ (95%置信度)
+        ABS_DIST_THRESHOLD = 1.0  # 1.0米
+        RSS_DIFF_THRESHOLD = 8.0  # RSS差异阈值 8dB (匹配锚点中位数8.68dB，覆盖47.7%)
 
-        # 逻辑或：只要满足 (3倍标准差以内) 或者 (绝对距离小于2米)，都算匹配成功
-        valid_mask = (min_residuals < SIGMA_THRESHOLD) | (selected_abs_dist < ABS_DIST_THRESHOLD)
-        
+        # 几何条件: (2σ以内) 或 (绝对距离<1m)
+        geo_valid = (min_residuals < SIGMA_THRESHOLD) | (selected_abs_dist < ABS_DIST_THRESHOLD)
+
+        if has_amplitude:
+            # 幅度条件: RSS差异 < 8dB
+            rss_valid = selected_rss_diff < RSS_DIFF_THRESHOLD
+            # 逻辑与(AND)：必须同时满足几何和幅度条件
+            valid_mask = geo_valid & rss_valid
+        else:
+            # 没有幅度信息，只用几何条件
+            valid_mask = geo_valid
+
         target_indices[valid_mask] = min_idx[valid_mask]
-        # ========================= [修改结束] =========================
         # 4. 计算 CrossEntropy Loss
         loss = F.cross_entropy(logits.view(M, K+1), target_indices, label_smoothing=0.1)
 
