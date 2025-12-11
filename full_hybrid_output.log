@@ -1,0 +1,1886 @@
+
+======================================================================
+完整混合方案实验（1500步）
+图注意力 + 自适应RANSAC
+======================================================================
+============================================================
+BP-SLAM 测试 (BP + GNN)
+Steps: 1500, Particles: 100000
+============================================================
+
+[GNN 配置 - 改进版]
+  - 预热步数: 75 (自定义)
+  - 隐藏维度: 64
+  - 学习率: 0.0001
+  - EMA: False (decay=0.999)
+  - 学习率调度: False
+  - 伪标签模式: and
+  - 置信度加权: True
+  - 跨帧GRU: False
+  - 层内GRU: False
+  - 训练模式: 从头开始
+  - 保存权重: checkpoints/gnn_model.pth
+从 measurementbadf.mat 加载检测数据...
+✓ 成功加载检测数据: 900 步, 2 个传感器
+
+开始运行BP-SLAM算法 (BP + GNN 模式)...
+
+============================================================
+✓ GNN 训练器初始化完成
+  - 伪标签模式: and
+  - 置信度加权: True
+  - 图注意力: False
+  - 自适应RANSAC: False
+GNN Trainer (Improved) initialized on cuda, warmup steps: 75
+  [Pseudo-label] Step 1: Pos=1(16.7%), Neg=5(83.3%), Total=6
+  [Pseudo-label] Step 2: Pos=1(20.0%), Neg=4(80.0%), Total=5
+Time instance: 2
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 6
+Position error agent: 0.014639
+Execution Time: 1.8187
+---------------------------------------------------
+
+  [Pseudo-label] Step 3: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 4: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 3
+Number of Anchors Sensor 1: 12
+Number of Anchors Sensor 2: 10
+Position error agent: 0.026541
+Execution Time: 0.9984
+---------------------------------------------------
+
+  [Pseudo-label] Step 5: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 6: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 4
+Number of Anchors Sensor 1: 11
+Number of Anchors Sensor 2: 9
+Position error agent: 0.040598
+Execution Time: 1.5024
+---------------------------------------------------
+
+  [Pseudo-label] Step 7: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 8: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 5
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 7
+Position error agent: 0.056275
+Execution Time: 1.5631
+---------------------------------------------------
+
+  [Pseudo-label] Step 9: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 10: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 6
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 7
+Position error agent: 0.072219
+Execution Time: 0.9974
+---------------------------------------------------
+
+  [Pseudo-label] Step 11: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 12: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 7
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 7
+Position error agent: 0.090058
+Execution Time: 1.0056
+---------------------------------------------------
+
+  [Pseudo-label] Step 13: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 14: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 8
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.105817
+Execution Time: 1.0044
+---------------------------------------------------
+
+  [Pseudo-label] Step 15: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 16: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 9
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.122247
+Execution Time: 0.8314
+---------------------------------------------------
+
+  [Pseudo-label] Step 17: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 18: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 10
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.141113
+Execution Time: 0.8880
+---------------------------------------------------
+
+  [Pseudo-label] Step 19: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 1, Step 10, Loss: 0.5119
+  [Pseudo-label] Step 20: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 10, Loss: 0.6047
+Time instance: 11
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.161989
+Execution Time: 0.8663
+---------------------------------------------------
+
+  [Pseudo-label] Step 21: Pos=6(85.7%), Neg=1(14.3%), Total=7
+  [Pseudo-label] Step 22: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 12
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.182057
+Execution Time: 0.9637
+---------------------------------------------------
+
+  [Pseudo-label] Step 23: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 24: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 13
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.202539
+Execution Time: 1.0292
+---------------------------------------------------
+
+  [Pseudo-label] Step 25: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 26: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 14
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.224853
+Execution Time: 0.9404
+---------------------------------------------------
+
+  [Pseudo-label] Step 27: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 28: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 15
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.246186
+Execution Time: 0.8914
+---------------------------------------------------
+
+  [Pseudo-label] Step 29: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 30: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 16
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.267721
+Execution Time: 0.9390
+---------------------------------------------------
+
+  [Pseudo-label] Step 31: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 32: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 17
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.289664
+Execution Time: 1.0006
+---------------------------------------------------
+
+  [Pseudo-label] Step 33: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 34: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 18
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.309974
+Execution Time: 0.8530
+---------------------------------------------------
+
+  [Pseudo-label] Step 35: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 36: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 19
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.329927
+Execution Time: 0.7793
+---------------------------------------------------
+
+  [Pseudo-label] Step 37: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 38: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 20
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.350302
+Execution Time: 0.7637
+---------------------------------------------------
+
+  [Pseudo-label] Step 39: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 20, Loss: 0.4463
+  [Pseudo-label] Step 40: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 20, Loss: 0.4215
+Time instance: 21
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.371271
+Execution Time: 0.8290
+---------------------------------------------------
+
+  [Pseudo-label] Step 41: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 42: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 22
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.391853
+Execution Time: 0.8843
+---------------------------------------------------
+
+  [Pseudo-label] Step 43: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 44: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 23
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.413806
+Execution Time: 0.8194
+---------------------------------------------------
+
+  [Pseudo-label] Step 45: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 46: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 24
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.434073
+Execution Time: 0.8660
+---------------------------------------------------
+
+  [Pseudo-label] Step 47: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 48: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 25
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.453235
+Execution Time: 0.7964
+---------------------------------------------------
+
+  [Pseudo-label] Step 49: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 50: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 26
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.473557
+Execution Time: 0.8395
+---------------------------------------------------
+
+  [Pseudo-label] Step 51: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 52: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 27
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.494439
+Execution Time: 0.8570
+---------------------------------------------------
+
+  [Pseudo-label] Step 53: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 54: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 28
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.514946
+Execution Time: 0.8178
+---------------------------------------------------
+
+  [Pseudo-label] Step 55: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 56: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 29
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.534562
+Execution Time: 0.8316
+---------------------------------------------------
+
+  [Pseudo-label] Step 57: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 58: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 30
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.554644
+Execution Time: 0.9253
+---------------------------------------------------
+
+  [Pseudo-label] Step 59: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 30, Loss: 0.4461
+  [Pseudo-label] Step 60: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 30, Loss: 0.4210
+Time instance: 31
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.574298
+Execution Time: 0.7911
+---------------------------------------------------
+
+  [Pseudo-label] Step 61: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 62: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 32
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.594979
+Execution Time: 0.7809
+---------------------------------------------------
+
+  [Pseudo-label] Step 63: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 64: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 33
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.615595
+Execution Time: 0.9318
+---------------------------------------------------
+
+  [Pseudo-label] Step 65: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 66: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 34
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.635097
+Execution Time: 0.9971
+---------------------------------------------------
+
+  [Pseudo-label] Step 67: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 68: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 35
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.657148
+Execution Time: 1.0591
+---------------------------------------------------
+
+  [Pseudo-label] Step 69: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 70: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 36
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.677137
+Execution Time: 1.0093
+---------------------------------------------------
+
+  [Pseudo-label] Step 71: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 72: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 37
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.697766
+Execution Time: 0.9139
+---------------------------------------------------
+
+  [Pseudo-label] Step 73: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 74: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 38
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.720383
+Execution Time: 1.0028
+---------------------------------------------------
+
+  [Pseudo-label] Step 75: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 76: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 39
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.740674
+Execution Time: 1.0019
+---------------------------------------------------
+
+  [Pseudo-label] Step 77: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 78: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 40
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.761077
+Execution Time: 0.8983
+---------------------------------------------------
+
+  [Pseudo-label] Step 79: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 40, Loss: 0.4475
+  [Pseudo-label] Step 80: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 40, Loss: 0.4210
+Time instance: 41
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.780343
+Execution Time: 0.7952
+---------------------------------------------------
+
+  [Pseudo-label] Step 81: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 82: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 42
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.799430
+Execution Time: 0.7207
+---------------------------------------------------
+
+  [Pseudo-label] Step 83: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 84: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 43
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.819835
+Execution Time: 0.7485
+---------------------------------------------------
+
+  [Pseudo-label] Step 85: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 86: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 44
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.840315
+Execution Time: 0.8466
+---------------------------------------------------
+
+  [Pseudo-label] Step 87: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 88: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 45
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.860849
+Execution Time: 1.0245
+---------------------------------------------------
+
+  [Pseudo-label] Step 89: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 90: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 46
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.881083
+Execution Time: 0.8601
+---------------------------------------------------
+
+  [Pseudo-label] Step 91: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 92: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 47
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.901258
+Execution Time: 0.9321
+---------------------------------------------------
+
+  [Pseudo-label] Step 93: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 94: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 48
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.922500
+Execution Time: 0.9231
+---------------------------------------------------
+
+  [Pseudo-label] Step 95: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 96: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 49
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.944058
+Execution Time: 1.0193
+---------------------------------------------------
+
+  [Pseudo-label] Step 97: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 98: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 50
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.965575
+Execution Time: 1.0801
+---------------------------------------------------
+
+  [Pseudo-label] Step 99: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 1, Step 50, Loss: 0.5647
+  [Pseudo-label] Step 100: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 50, Loss: 0.4229
+Time instance: 51
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.986393
+Execution Time: 0.8339
+---------------------------------------------------
+
+  [Pseudo-label] Step 101: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 102: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 52
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.995550
+Execution Time: 0.9335
+---------------------------------------------------
+
+  [Pseudo-label] Step 103: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 104: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 53
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.004038
+Execution Time: 0.9229
+---------------------------------------------------
+
+  [Pseudo-label] Step 105: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 106: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 54
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.013666
+Execution Time: 0.9698
+---------------------------------------------------
+
+  [Pseudo-label] Step 107: Pos=4(100.0%), Neg=0(0.0%), Total=4
+  [Pseudo-label] Step 108: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 55
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.021180
+Execution Time: 0.7892
+---------------------------------------------------
+
+  [Pseudo-label] Step 109: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 110: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 56
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.031890
+Execution Time: 0.7455
+---------------------------------------------------
+
+  [Pseudo-label] Step 111: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 112: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 57
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.042159
+Execution Time: 0.7187
+---------------------------------------------------
+
+  [Pseudo-label] Step 113: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 114: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 58
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.053969
+Execution Time: 0.6597
+---------------------------------------------------
+
+  [Pseudo-label] Step 115: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 116: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 59
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.063636
+Execution Time: 0.6649
+---------------------------------------------------
+
+  [Pseudo-label] Step 117: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 118: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 60
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.073569
+Execution Time: 0.6442
+---------------------------------------------------
+
+  [Pseudo-label] Step 119: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 60, Loss: 0.4466
+  [Pseudo-label] Step 120: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 60, Loss: 0.4215
+Time instance: 61
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.083850
+Execution Time: 0.7852
+---------------------------------------------------
+
+  [Pseudo-label] Step 121: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 122: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 62
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.095021
+Execution Time: 0.9449
+---------------------------------------------------
+
+  [Pseudo-label] Step 123: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 124: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 63
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.104521
+Execution Time: 0.7858
+---------------------------------------------------
+
+  [Pseudo-label] Step 125: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 126: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 64
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.114244
+Execution Time: 0.6852
+---------------------------------------------------
+
+  [Pseudo-label] Step 127: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 128: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 65
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.124942
+Execution Time: 0.8381
+---------------------------------------------------
+
+  [Pseudo-label] Step 129: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 130: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 66
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.134418
+Execution Time: 0.8414
+---------------------------------------------------
+
+  [Pseudo-label] Step 131: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 132: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 67
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.144818
+Execution Time: 0.7284
+---------------------------------------------------
+
+  [Pseudo-label] Step 133: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 134: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 68
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.155225
+Execution Time: 0.8395
+---------------------------------------------------
+
+  [Pseudo-label] Step 135: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 136: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 69
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.164425
+Execution Time: 0.7338
+---------------------------------------------------
+
+  [Pseudo-label] Step 137: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 138: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 70
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.174539
+Execution Time: 0.8320
+---------------------------------------------------
+
+  [Pseudo-label] Step 139: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 70, Loss: 0.4461
+  [Pseudo-label] Step 140: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 70, Loss: 0.4210
+Time instance: 71
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.184631
+Execution Time: 0.9114
+---------------------------------------------------
+
+  [Pseudo-label] Step 141: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 142: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 72
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.194543
+Execution Time: 0.7681
+---------------------------------------------------
+
+  [Pseudo-label] Step 143: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 144: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 73
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.205171
+Execution Time: 0.7829
+---------------------------------------------------
+
+  [Pseudo-label] Step 145: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 146: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 74
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.215600
+Execution Time: 0.8013
+---------------------------------------------------
+
+  [Pseudo-label] Step 147: Pos=6(85.7%), Neg=1(14.3%), Total=7
+  [Pseudo-label] Step 148: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 75
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.225418
+Execution Time: 0.7488
+---------------------------------------------------
+
+  [Pseudo-label] Step 149: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 150: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 76
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.235533
+Execution Time: 0.7241
+---------------------------------------------------
+
+  [Pseudo-label] Step 151: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 152: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 77
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.245917
+Execution Time: 0.6697
+---------------------------------------------------
+
+  [Pseudo-label] Step 153: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 154: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 78
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.255800
+Execution Time: 0.7749
+---------------------------------------------------
+
+  [Pseudo-label] Step 155: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 156: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 79
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.265651
+Execution Time: 0.7350
+---------------------------------------------------
+
+  [Pseudo-label] Step 157: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 158: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 80
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.276261
+Execution Time: 0.6900
+---------------------------------------------------
+
+  [Pseudo-label] Step 159: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 80, Loss: 0.4463
+  [Pseudo-label] Step 160: Pos=4(100.0%), Neg=0(0.0%), Total=4
+  [GNN] Sensor 2, Step 80, Loss: 0.4223
+Time instance: 81
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.286388
+Execution Time: 0.6455
+---------------------------------------------------
+
+  [Pseudo-label] Step 161: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 162: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 82
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.297168
+Execution Time: 0.6922
+---------------------------------------------------
+
+  [Pseudo-label] Step 163: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 164: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 83
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.308166
+Execution Time: 0.7326
+---------------------------------------------------
+
+  [Pseudo-label] Step 165: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 166: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 84
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.318300
+Execution Time: 0.7376
+---------------------------------------------------
+
+  [Pseudo-label] Step 167: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 168: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 85
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.327361
+Execution Time: 0.7834
+---------------------------------------------------
+
+  [Pseudo-label] Step 169: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 170: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 86
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.339463
+Execution Time: 0.7677
+---------------------------------------------------
+
+  [Pseudo-label] Step 171: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 172: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 87
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.351139
+Execution Time: 0.8370
+---------------------------------------------------
+
+  [Pseudo-label] Step 173: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 174: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 88
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.361116
+Execution Time: 0.6779
+---------------------------------------------------
+
+  [Pseudo-label] Step 175: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 176: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 89
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.369071
+Execution Time: 0.6219
+---------------------------------------------------
+
+  [Pseudo-label] Step 177: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 178: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 90
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.391177
+Execution Time: 0.7284
+---------------------------------------------------
+
+  [Pseudo-label] Step 179: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 90, Loss: 0.4464
+  [Pseudo-label] Step 180: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 90, Loss: 0.4219
+Time instance: 91
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.394083
+Execution Time: 0.8425
+---------------------------------------------------
+
+  [Pseudo-label] Step 181: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 182: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 92
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.401627
+Execution Time: 0.7483
+---------------------------------------------------
+
+  [Pseudo-label] Step 183: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 184: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 93
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.410521
+Execution Time: 0.7180
+---------------------------------------------------
+
+  [Pseudo-label] Step 185: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 186: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 94
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.420151
+Execution Time: 0.7878
+---------------------------------------------------
+
+  [Pseudo-label] Step 187: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 188: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 95
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.430333
+Execution Time: 0.7558
+---------------------------------------------------
+
+  [Pseudo-label] Step 189: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 190: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 96
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.441335
+Execution Time: 0.7253
+---------------------------------------------------
+
+  [Pseudo-label] Step 191: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 192: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 97
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.450774
+Execution Time: 0.6765
+---------------------------------------------------
+
+  [Pseudo-label] Step 193: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 194: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 98
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.461644
+Execution Time: 0.6182
+---------------------------------------------------
+
+  [Pseudo-label] Step 195: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 196: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 99
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.473918
+Execution Time: 0.5979
+---------------------------------------------------
+
+  [Pseudo-label] Step 197: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 198: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 100
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.484510
+Execution Time: 0.6944
+---------------------------------------------------
+
+  [Pseudo-label] Step 199: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 100, Loss: 0.4464
+  [Pseudo-label] Step 200: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 100, Loss: 0.6537
+Time instance: 101
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.494063
+Execution Time: 0.6352
+---------------------------------------------------
+
+  [Pseudo-label] Step 201: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 202: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 102
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.502837
+Execution Time: 0.6259
+---------------------------------------------------
+
+  [Pseudo-label] Step 203: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 204: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 103
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.509950
+Execution Time: 0.7080
+---------------------------------------------------
+
+  [Pseudo-label] Step 205: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 206: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 104
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.519308
+Execution Time: 0.7243
+---------------------------------------------------
+
+  [Pseudo-label] Step 207: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 208: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 105
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.529667
+Execution Time: 0.5694
+---------------------------------------------------
+
+  [Pseudo-label] Step 209: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 210: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 106
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.541518
+Execution Time: 0.6112
+---------------------------------------------------
+
+  [Pseudo-label] Step 211: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 212: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 107
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.552893
+Execution Time: 0.6572
+---------------------------------------------------
+
+  [Pseudo-label] Step 213: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 214: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 108
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.563297
+Execution Time: 0.6008
+---------------------------------------------------
+
+  [Pseudo-label] Step 215: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 216: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 109
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.574077
+Execution Time: 0.6336
+---------------------------------------------------
+
+  [Pseudo-label] Step 217: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 218: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 110
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.584068
+Execution Time: 0.6439
+---------------------------------------------------
+
+  [Pseudo-label] Step 219: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 110, Loss: 0.4461
+  [Pseudo-label] Step 220: Pos=4(100.0%), Neg=0(0.0%), Total=4
+  [GNN] Sensor 2, Step 110, Loss: 0.4213
+Time instance: 111
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.580385
+Execution Time: 0.7018
+---------------------------------------------------
+
+  [Pseudo-label] Step 221: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 222: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 112
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.596872
+Execution Time: 0.6146
+---------------------------------------------------
+
+  [Pseudo-label] Step 223: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 224: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 113
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.611537
+Execution Time: 0.6523
+---------------------------------------------------
+
+  [Pseudo-label] Step 225: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 226: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 114
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.623754
+Execution Time: 0.6366
+---------------------------------------------------
+
+  [Pseudo-label] Step 227: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 228: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 115
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.635122
+Execution Time: 0.6637
+---------------------------------------------------
+
+  [Pseudo-label] Step 229: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 230: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 116
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.645530
+Execution Time: 0.6165
+---------------------------------------------------
+
+  [Pseudo-label] Step 231: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 232: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 117
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.656230
+Execution Time: 0.5756
+---------------------------------------------------
+
+  [Pseudo-label] Step 233: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 234: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 118
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.666427
+Execution Time: 0.6873
+---------------------------------------------------
+
+  [Pseudo-label] Step 235: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 236: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 119
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.675774
+Execution Time: 0.6354
+---------------------------------------------------
+
+  [Pseudo-label] Step 237: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 238: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 120
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.685530
+Execution Time: 0.7121
+---------------------------------------------------
+
+  [Pseudo-label] Step 239: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 120, Loss: 0.4461
+  [Pseudo-label] Step 240: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 120, Loss: 0.4210
+Time instance: 121
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.695917
+Execution Time: 0.9321
+---------------------------------------------------
+
+  [Pseudo-label] Step 241: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 242: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 122
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.706799
+Execution Time: 0.8110
+---------------------------------------------------
+
+  [Pseudo-label] Step 243: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 244: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 123
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.717088
+Execution Time: 0.6974
+---------------------------------------------------
+
+  [Pseudo-label] Step 245: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 246: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 124
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.727062
+Execution Time: 0.7106
+---------------------------------------------------
+
+  [Pseudo-label] Step 247: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 248: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 125
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.736994
+Execution Time: 0.6367
+---------------------------------------------------
+
+  [Pseudo-label] Step 249: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 250: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 126
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.747091
+Execution Time: 0.6513
+---------------------------------------------------
+
+  [Pseudo-label] Step 251: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 252: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 127
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.772895
+Execution Time: 0.5946
+---------------------------------------------------
+
+  [Pseudo-label] Step 253: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 254: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 128
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.779850
+Execution Time: 0.6434
+---------------------------------------------------
+
+  [Pseudo-label] Step 255: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 256: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 129
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.792940
+Execution Time: 0.5673
+---------------------------------------------------
+
+  [Pseudo-label] Step 257: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 258: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 130
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.798897
+Execution Time: 0.6284
+---------------------------------------------------
+
+  [Pseudo-label] Step 259: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 130, Loss: 0.5113
+  [Pseudo-label] Step 260: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 130, Loss: 0.4261
+Time instance: 131
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.806572
+Execution Time: 0.6078
+---------------------------------------------------
+
+  [Pseudo-label] Step 261: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 262: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 132
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.811835
+Execution Time: 0.5792
+---------------------------------------------------
+
+  [Pseudo-label] Step 263: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 264: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 133
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.818647
+Execution Time: 0.5915
+---------------------------------------------------
+
+  [Pseudo-label] Step 265: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 266: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 134
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.827402
+Execution Time: 0.5808
+---------------------------------------------------
+
+  [Pseudo-label] Step 267: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 268: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 135
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.837786
+Execution Time: 0.5825
+---------------------------------------------------
+
+  [Pseudo-label] Step 269: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 270: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 136
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.850261
+Execution Time: 0.6093
+---------------------------------------------------
+
+  [Pseudo-label] Step 271: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 272: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 137
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.862616
+Execution Time: 0.5532
+---------------------------------------------------
+
+  [Pseudo-label] Step 273: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 274: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 138
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.872073
+Execution Time: 0.5737
+---------------------------------------------------
+
+  [Pseudo-label] Step 275: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 276: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 139
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.881503
+Execution Time: 0.6379
+---------------------------------------------------
+
+  [Pseudo-label] Step 277: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 278: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 140
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.891304
+Execution Time: 0.6488
+---------------------------------------------------
+
+  [Pseudo-label] Step 279: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 140, Loss: 0.4462
+  [Pseudo-label] Step 280: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 140, Loss: 0.4210
+Time instance: 141
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.894946
+Execution Time: 0.6613
+---------------------------------------------------
+
+  [Pseudo-label] Step 281: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 282: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 142
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.901992
+Execution Time: 0.6710
+---------------------------------------------------
+
+  [Pseudo-label] Step 283: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 284: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 143
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.911247
+Execution Time: 0.5906
+---------------------------------------------------
+
+  [Pseudo-label] Step 285: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 286: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 144
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.920611
+Execution Time: 0.5784
+---------------------------------------------------
+
+  [Pseudo-label] Step 287: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 288: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 145
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.924726
+Execution Time: 0.5424
+---------------------------------------------------
+
+  [Pseudo-label] Step 289: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 290: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 146
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.932425
+Execution Time: 0.6209
+---------------------------------------------------
+
+  [Pseudo-label] Step 291: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 292: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 147
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.941526
+Execution Time: 0.5728
+---------------------------------------------------
+
+  [Pseudo-label] Step 293: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 294: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 148
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.951672
+Execution Time: 0.6310
+---------------------------------------------------
+
+  [Pseudo-label] Step 295: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 296: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 149
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.961225
+Execution Time: 0.5642
+---------------------------------------------------
+
+  [Pseudo-label] Step 297: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 298: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 150
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.971429
+Execution Time: 0.5853
+---------------------------------------------------
+
+  [Pseudo-label] Step 299: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 150, Loss: 0.4463
+  [Pseudo-label] Step 300: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 150, Loss: 0.4210
+Time instance: 151
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.982009
+Execution Time: 0.5509
+---------------------------------------------------
+
+  [Pseudo-label] Step 301: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 302: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 152
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.992094
+Execution Time: 0.5343
+---------------------------------------------------
+
+  [Pseudo-label] Step 303: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 304: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 153
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 1.996129
+Execution Time: 0.6948
+---------------------------------------------------
+
+  [Pseudo-label] Step 305: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 306: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 154
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.002546
+Execution Time: 0.5830
+---------------------------------------------------
+
+  [Pseudo-label] Step 307: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 308: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 155
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.004544
+Execution Time: 0.5876
+---------------------------------------------------
+
+  [Pseudo-label] Step 309: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 310: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 156
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.011303
+Execution Time: 0.5660
+---------------------------------------------------
+
+  [Pseudo-label] Step 311: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 312: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 157
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.020794
+Execution Time: 0.5296
+---------------------------------------------------
+
+  [Pseudo-label] Step 313: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 314: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 158
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.031751
+Execution Time: 0.6284
+---------------------------------------------------
+
+  [Pseudo-label] Step 315: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 316: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 159
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.041697
+Execution Time: 0.6030
+---------------------------------------------------
+
+  [Pseudo-label] Step 317: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 318: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 160
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.051533
+Execution Time: 0.7994
+---------------------------------------------------
+
+  [Pseudo-label] Step 319: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 160, Loss: 0.4461
+  [Pseudo-label] Step 320: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 160, Loss: 0.4210
+Time instance: 161
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.062075
+Execution Time: 0.6131
+---------------------------------------------------
+
+  [Pseudo-label] Step 321: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 322: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 162
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.072045
+Execution Time: 0.5998
+---------------------------------------------------
+
+  [Pseudo-label] Step 323: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 324: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 163
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.074850
+Execution Time: 0.6380
+---------------------------------------------------
+
+  [Pseudo-label] Step 325: Pos=6(85.7%), Neg=1(14.3%), Total=7
+  [Pseudo-label] Step 326: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 164
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.081576
+Execution Time: 0.5652
+---------------------------------------------------
+
+  [Pseudo-label] Step 327: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 328: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 165
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.091080
+Execution Time: 0.5284
+---------------------------------------------------
+
+  [Pseudo-label] Step 329: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 330: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 166
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.100947
+Execution Time: 0.5792
+---------------------------------------------------
+
+  [Pseudo-label] Step 331: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 332: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 167
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.110937
+Execution Time: 0.5601
+---------------------------------------------------
+
+  [Pseudo-label] Step 333: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 334: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 168
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.120740
+Execution Time: 0.5501
+---------------------------------------------------
+
+  [Pseudo-label] Step 335: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 336: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 169
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.126739
+Execution Time: 0.5388
+---------------------------------------------------
+
+  [Pseudo-label] Step 337: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 338: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 170
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.124990
+Execution Time: 0.5346
+---------------------------------------------------
+
+  [Pseudo-label] Step 339: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 170, Loss: 0.4464
+  [Pseudo-label] Step 340: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 170, Loss: 0.4210
+Time instance: 171
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.124426
+Execution Time: 0.5591
+---------------------------------------------------
+
+  [Pseudo-label] Step 341: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 342: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 172
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.124300
+Execution Time: 0.5876
+---------------------------------------------------
+
+  [Pseudo-label] Step 343: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 344: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 173
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.123168
+Execution Time: 0.5561
+---------------------------------------------------
+
+  [Pseudo-label] Step 345: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 346: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 174
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.123242
+Execution Time: 0.6929
+---------------------------------------------------
+
+  [Pseudo-label] Step 347: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 348: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 175
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.123085
+Execution Time: 0.6468
+---------------------------------------------------
+
+  [Pseudo-label] Step 349: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 350: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 176
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.124107
+Execution Time: 0.6322
+---------------------------------------------------
+
+  [Pseudo-label] Step 351: Pos=6(85.7%), Neg=1(14.3%), Total=7
+  [Pseudo-label] Step 352: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 177
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.123642
+Execution Time: 0.7168
+---------------------------------------------------
+
+  [Pseudo-label] Step 353: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 354: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 178
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.130024
+Execution Time: 0.8138
+---------------------------------------------------
+
+  [Pseudo-label] Step 355: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 356: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 179
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.133020
+Execution Time: 0.6886
+---------------------------------------------------
+
+  [Pseudo-label] Step 357: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 358: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 180
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.133856
+Execution Time: 0.6189
+---------------------------------------------------
+
+  [Pseudo-label] Step 359: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 180, Loss: 0.4461
+  [Pseudo-label] Step 360: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 180, Loss: 0.4210
+Time instance: 181
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.133744
+Execution Time: 0.6098
+---------------------------------------------------
+
+  [Pseudo-label] Step 361: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 362: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 182
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.134099
+Execution Time: 0.5773
+---------------------------------------------------
+
+  [Pseudo-label] Step 363: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 364: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 183
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.139893
+Execution Time: 0.6770
+---------------------------------------------------
+
+  [Pseudo-label] Step 365: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 366: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 184
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.142196
+Execution Time: 0.6587
+---------------------------------------------------
+
+  [Pseudo-label] Step 367: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 368: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 185
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.143105
+Execution Time: 0.6171
+---------------------------------------------------
+
+  [Pseudo-label] Step 369: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 370: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 186
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.143843
+Execution Time: 0.6645
+---------------------------------------------------
+
+  [Pseudo-label] Step 371: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 372: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 187
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.143038
+Execution Time: 0.6921
+---------------------------------------------------
+
+  [Pseudo-label] Step 373: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 374: Pos=4(100.0%), Neg=0(0.0%), Total=4
+Time instance: 188
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.142621
+Execution Time: 0.6073
+---------------------------------------------------
+
+  [Pseudo-label] Step 375: Pos=7(100.0%), Neg=0(0.0%), Total=7
+  [Pseudo-label] Step 376: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 189
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.149163
+Execution Time: 0.5674
+---------------------------------------------------
+
+  [Pseudo-label] Step 377: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 378: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 190
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.157910
+Execution Time: 0.5949
+---------------------------------------------------
+
+  [Pseudo-label] Step 379: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 190, Loss: 0.4469
+  [Pseudo-label] Step 380: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 190, Loss: 0.4210
+Time instance: 191
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.163138
+Execution Time: 0.6257
+---------------------------------------------------
+
+  [Pseudo-label] Step 381: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 382: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 192
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.164520
+Execution Time: 0.5733
+---------------------------------------------------
+
+  [Pseudo-label] Step 383: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 384: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 193
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.163839
+Execution Time: 0.5530
+---------------------------------------------------
+
+  [Pseudo-label] Step 385: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [Pseudo-label] Step 386: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 194
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.163352
+Execution Time: 0.5407
+---------------------------------------------------
+
+  [Pseudo-label] Step 387: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 388: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 195
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.164079
+Execution Time: 0.5951
+---------------------------------------------------
+
+  [Pseudo-label] Step 389: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 390: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 196
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.163010
+Execution Time: 0.5948
+---------------------------------------------------
+
+  [Pseudo-label] Step 391: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 392: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 197
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.163076
+Execution Time: 0.5336
+---------------------------------------------------
+
+  [Pseudo-label] Step 393: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 394: Pos=5(83.3%), Neg=1(16.7%), Total=6
+Time instance: 198
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.163326
+Execution Time: 0.5982
+---------------------------------------------------
+
+  [Pseudo-label] Step 395: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 396: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 199
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.163004
+Execution Time: 0.6079
+---------------------------------------------------
+
+  [Pseudo-label] Step 397: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 398: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 200
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.162329
+Execution Time: 0.5946
+---------------------------------------------------
+
+  [Pseudo-label] Step 399: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [GNN] Sensor 1, Step 200, Loss: 0.4461
+  [Pseudo-label] Step 400: Pos=5(100.0%), Neg=0(0.0%), Total=5
+  [GNN] Sensor 2, Step 200, Loss: 0.4210
+Time instance: 201
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.162967
+Execution Time: 0.5771
+---------------------------------------------------
+
+  [Pseudo-label] Step 401: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 402: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 202
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 2.163263
+Execution Time: 0.5481
+---------------------------------------------------
+
+  [Pseudo-label] Step 403: Pos=6(100.0%), Neg=0(0.0%), Total=6
+  [Pseudo-label] Step 404: Pos=5(100.0%), Neg=0(0.0%), Total=5
+Time instance: 203

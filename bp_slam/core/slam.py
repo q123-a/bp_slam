@@ -19,7 +19,7 @@ from .association import calculate_association_probabilities_ga
 # FGNN 相关导入
 try:
     import torch
-    from .gnn_trainer import GNNTrainer
+    from .gnn_trainer_improved import GNNTrainerImproved
     FGNN_AVAILABLE = True
 except ImportError:
     FGNN_AVAILABLE = False
@@ -68,16 +68,46 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
 
     if use_gnn and FGNN_AVAILABLE:
         gnn_device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        gnn_hidden_dim = parameters.get('gnn_hidden_dim', 128)
-        gnn_lr = parameters.get('gnn_lr', 1e-3)
+        gnn_hidden_dim = parameters.get('gnn_hidden_dim', 64)
+        gnn_lr = parameters.get('gnn_lr', 1e-4)
         gnn_checkpoint_path = parameters.get('gnn_checkpoint_path', None)
-        gnn_trainer = GNNTrainer(device=gnn_device, lr=gnn_lr, hidden_dim=gnn_hidden_dim,
-                                 checkpoint_path=gnn_checkpoint_path)
+
+        # [改进版] 新增参数
+        gnn_use_ema = parameters.get('gnn_use_ema', True)
+        gnn_ema_decay = parameters.get('gnn_ema_decay', 0.999)
+        gnn_use_lr_scheduler = parameters.get('gnn_use_lr_scheduler', True)
+        gnn_pseudo_label_mode = parameters.get('gnn_pseudo_label_mode', 'and')
+        gnn_confidence_weighting = parameters.get('gnn_confidence_weighting', True)
+        gnn_use_temporal_gru = parameters.get('gnn_use_temporal_gru', False)  # 默认关闭跨帧GRU
+        gnn_use_layer_gru = parameters.get('gnn_use_layer_gru', False)  # 默认关闭层内GRU
+
+        # [新增] 图注意力 + RANSAC 参数
+        gnn_use_graph_attention = parameters.get('gnn_use_graph_attention', True)  # 默认启用图注意力
+        gnn_use_ransac = parameters.get('gnn_use_ransac', True)  # 默认启用RANSAC
+        gnn_ransac_threshold = parameters.get('gnn_ransac_threshold', 2.0)  # RANSAC距离阈值（米）
+
+        gnn_trainer = GNNTrainerImproved(
+            device=gnn_device,
+            lr=gnn_lr,
+            hidden_dim=gnn_hidden_dim,
+            checkpoint_path=gnn_checkpoint_path,
+            seed=None,  # 取消固定随机种子
+            use_ema=gnn_use_ema,
+            ema_decay=gnn_ema_decay,
+            use_lr_scheduler=gnn_use_lr_scheduler,
+            pseudo_label_mode=gnn_pseudo_label_mode,
+            confidence_weighting=gnn_confidence_weighting,
+            use_temporal_gru=gnn_use_temporal_gru,
+            use_layer_gru=gnn_use_layer_gru,
+            use_graph_attention=gnn_use_graph_attention,
+            use_ransac=gnn_use_ransac,
+            ransac_threshold=gnn_ransac_threshold
+        )
 
         # [关键] 每次开始新序列前，清空 GRU 记忆
         gnn_trainer.reset_hidden_state()
 
-        print(f"GNN Trainer initialized on {gnn_device}, warmup steps: {warmup_steps}")
+        print(f"GNN Trainer (Improved) initialized on {gnn_device}, warmup steps: {warmup_steps}")
         if gnn_checkpoint_path:
             print(f"  - Loaded checkpoint: {gnn_checkpoint_path}")
 
@@ -262,6 +292,13 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                         predicted_uncertainties
                     )
 
+                    # [新增] 记录详细的 loss 信息
+                    gnn_trainer.detailed_loss_history.append({
+                        'step': step,
+                        'sensor': sensor + 1,
+                        'loss': float(loss)
+                    })
+
                     # 打印 Loss
                     if step % 10 == 0:
                         print(f"  [GNN] Sensor {sensor+1}, Step {step}, Loss: {loss:.4f}")
@@ -269,6 +306,18 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     # 决策：预热期后使用 GNN 结果
                     if step > warmup_steps:
                         use_gnn_result = True
+
+                        # [关键] 几何保底机制 - 防止 GNN 初始化过差导致崩盘
+                        # 从 legacy_feat 中提取归一化残差 (Ch1: 标准化残差)
+                        # legacy_feat shape: (M, K, 5)
+                        residuals = np.abs(legacy_feat[:, :, 1])  # (M, K)
+
+                        # 定义保底阈值: 残差 < 1.0σ 认为几何完美
+                        mask_geo_perfect = (residuals < 1.0)
+
+                        # 强制拉升概率: 几何完美的点概率至少 0.5
+                        # 即使 GNN 初始化时输出 0.01，也会被纠正回来
+                        gnn_probs[mask_geo_perfect] = np.maximum(gnn_probs[mask_geo_perfect], 0.5)
 
                         # [关键] 将 GNN 概率转换为 BP 消息格式
                         # message_lhf_ratios: (M, K) 表示测量-锚点关联强度
@@ -472,5 +521,10 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
         print(f'Position error agent: {error_agent:.6f}')
         print(f'Execution Time: {exec_time_per_step[step]:.4f}')
         print('---------------------------------------------------\n')
+
+    # [新增] 保存 GNN loss 历史和正负样本统计到文件
+    if use_gnn and gnn_trainer is not None:
+        gnn_trainer.save_loss_history('results/gnn_loss_history.json')
+        gnn_trainer.save_pseudo_label_history('results/gnn_pseudo_label_history.json')
 
     return estimated_trajectory, estimated_anchors, posterior_particles_anchors_storage, num_estimated_anchors

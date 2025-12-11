@@ -188,8 +188,19 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
             parameters['gnn_warmup_steps'] = int(max_steps * warmup_ratio)
             warmup_source = "自动计算"
 
-        parameters['gnn_hidden_dim'] = 128  # 隐藏层维度
-        parameters['gnn_lr'] = 5e-5  # 学习率 (降低以提高稳定性)
+        parameters['gnn_hidden_dim'] = 64  # 隐藏层维度
+        parameters['gnn_lr'] = 1e-4  # 学习率
+
+        # [改进版] 新增参数 - 稳定性优化
+        parameters['gnn_use_ema'] = False  # 使用指数移动平均 (已关闭)
+        parameters['gnn_ema_decay'] = 0.999  # EMA衰减率
+        parameters['gnn_use_lr_scheduler'] = False  # 使用学习率调度器 (已关闭)
+        parameters['gnn_pseudo_label_mode'] = 'and'  # 伪标签模式: 'and', 'or', 'adaptive' (严格模式，高质量)
+        parameters['gnn_confidence_weighting'] = True  # 置信度加权损失 (已开启)
+
+        # [关键] GRU控制参数 - 默认关闭以避免错误传播
+        parameters['gnn_use_temporal_gru'] = False  # 跨帧GRU记忆
+        parameters['gnn_use_layer_gru'] = False  # 层内GRU更新
 
         # 权重加载和保存配置
         parameters['gnn_checkpoint_path'] = gnn_load_checkpoint
@@ -197,9 +208,16 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         parameters['gnn_checkpoint_save_path'] = 'checkpoints/gnn_model.pth'
         parameters['gnn_inference_only'] = gnn_inference_only
 
-        print(f"\n[GNN 配置] 预热步数: {parameters['gnn_warmup_steps']} ({warmup_source}), "
-              f"隐藏维度: {parameters['gnn_hidden_dim']}, "
-              f"学习率: {parameters['gnn_lr']}")
+        print(f"\n[GNN 配置 - 改进版]")
+        print(f"  - 预热步数: {parameters['gnn_warmup_steps']} ({warmup_source})")
+        print(f"  - 隐藏维度: {parameters['gnn_hidden_dim']}")
+        print(f"  - 学习率: {parameters['gnn_lr']}")
+        print(f"  - EMA: {parameters['gnn_use_ema']} (decay={parameters['gnn_ema_decay']})")
+        print(f"  - 学习率调度: {parameters['gnn_use_lr_scheduler']}")
+        print(f"  - 伪标签模式: {parameters['gnn_pseudo_label_mode']}")
+        print(f"  - 置信度加权: {parameters['gnn_confidence_weighting']}")
+        print(f"  - 跨帧GRU: {parameters['gnn_use_temporal_gru']}")
+        print(f"  - 层内GRU: {parameters['gnn_use_layer_gru']}")
 
         if gnn_load_checkpoint:
             print(f"  - 加载权重: {gnn_load_checkpoint}")
@@ -266,6 +284,57 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     print(f"最终位置误差: {final_error:.4f} m")
     print(f"平均位置误差: {mean_error:.4f} m")
     print(f"最大位置误差: {max_error:.4f} m")
+
+    # ---------------------------
+    # 7.5 [新增] 生成 GNN Loss 折线图
+    # ---------------------------
+    if use_gnn:
+        import json
+        import os
+        loss_file = 'results/gnn_loss_history.json'
+        if os.path.exists(loss_file):
+            print(f"\n生成 GNN Loss 折线图...")
+            with open(loss_file, 'r') as f:
+                loss_data = json.load(f)
+
+            detailed_loss = loss_data['detailed_loss_history']
+            if detailed_loss:
+                import matplotlib.pyplot as plt
+
+                # 提取数据
+                steps = [item['step'] for item in detailed_loss]
+                losses = [item['loss'] for item in detailed_loss]
+
+                # 创建图表
+                plt.figure(figsize=(12, 6))
+                plt.plot(steps, losses, linewidth=1.5, alpha=0.7, label='Training Loss')
+
+                # 添加移动平均线（平滑曲线）
+                window_size = 20
+                if len(losses) >= window_size:
+                    moving_avg = np.convolve(losses, np.ones(window_size)/window_size, mode='valid')
+                    plt.plot(steps[window_size-1:], moving_avg, 'r-', linewidth=2, label=f'Moving Average (window={window_size})')
+
+                plt.xlabel('Step', fontsize=12)
+                plt.ylabel('Loss', fontsize=12)
+                plt.title('GNN Training Loss over Time', fontsize=14, fontweight='bold')
+                plt.grid(True, alpha=0.3)
+                plt.legend(fontsize=10)
+                plt.tight_layout()
+
+                # 保存图表
+                loss_plot_path = 'results/gnn_loss_curve.png'
+                plt.savefig(loss_plot_path, dpi=150, bbox_inches='tight')
+                print(f"✓ Loss 折线图已保存到: {loss_plot_path}")
+                plt.close()
+
+                # 打印 loss 统计信息
+                print(f"\nGNN Loss 统计:")
+                print(f"  - 初始 Loss: {losses[0]:.4f}")
+                print(f"  - 最终 Loss: {losses[-1]:.4f}")
+                print(f"  - 平均 Loss: {np.mean(losses):.4f}")
+                print(f"  - 最小 Loss: {np.min(losses):.4f}")
+                print(f"  - 最大 Loss: {np.max(losses):.4f}")
 
     # ---------------------------
     # 8. 保存结果
