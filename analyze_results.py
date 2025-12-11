@@ -210,11 +210,14 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
     # 创建图形
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
+    # 确定最小的时间步数，以对齐两个轨迹
+    min_steps = min(bp_stats['num_steps'], gnn_stats['num_steps'])
+
     # 1. 位置误差随时间变化
     ax = axes[0, 0]
-    steps = np.arange(bp_stats['num_steps'])
-    ax.plot(steps, bp_stats['position_errors'], 'b-', linewidth=1.5, label='BP', alpha=0.7)
-    ax.plot(steps, gnn_stats['position_errors'], 'r-', linewidth=1.5, label='GNN', alpha=0.7)
+    steps = np.arange(min_steps)
+    ax.plot(steps, bp_stats['position_errors'][:min_steps], 'b-', linewidth=1.5, label='BP', alpha=0.7)
+    ax.plot(steps, gnn_stats['position_errors'][:min_steps], 'r-', linewidth=1.5, label='GNN', alpha=0.7)
     ax.set_xlabel('Time Step', fontsize=12)
     ax.set_ylabel('Position Error (m)', fontsize=12)
     ax.set_title('Position Error over Time', fontsize=14)
@@ -223,8 +226,8 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
 
     # 2. X 方向误差对比
     ax = axes[0, 1]
-    ax.plot(steps, bp_stats['x_errors'], 'b-', linewidth=1.5, label='BP', alpha=0.7)
-    ax.plot(steps, gnn_stats['x_errors'], 'r-', linewidth=1.5, label='GNN', alpha=0.7)
+    ax.plot(steps, bp_stats['x_errors'][:min_steps], 'b-', linewidth=1.5, label='BP', alpha=0.7)
+    ax.plot(steps, gnn_stats['x_errors'][:min_steps], 'r-', linewidth=1.5, label='GNN', alpha=0.7)
     ax.axhline(y=0, color='k', linestyle='--', linewidth=0.5)
     ax.set_xlabel('Time Step', fontsize=12)
     ax.set_ylabel('X Error (m)', fontsize=12)
@@ -234,8 +237,8 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
 
     # 3. Y 方向误差对比
     ax = axes[1, 0]
-    ax.plot(steps, bp_stats['y_errors'], 'b-', linewidth=1.5, label='BP', alpha=0.7)
-    ax.plot(steps, gnn_stats['y_errors'], 'r-', linewidth=1.5, label='GNN', alpha=0.7)
+    ax.plot(steps, bp_stats['y_errors'][:min_steps], 'b-', linewidth=1.5, label='BP', alpha=0.7)
+    ax.plot(steps, gnn_stats['y_errors'][:min_steps], 'r-', linewidth=1.5, label='GNN', alpha=0.7)
     ax.axhline(y=0, color='k', linestyle='--', linewidth=0.5)
     ax.set_xlabel('Time Step', fontsize=12)
     ax.set_ylabel('Y Error (m)', fontsize=12)
@@ -277,7 +280,8 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
     fig.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"\n对比图已保存: {save_path}")
 
-    plt.show()
+    # 关闭图形以释放内存
+    plt.close(fig)
 
 
 if __name__ == '__main__':

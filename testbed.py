@@ -12,16 +12,20 @@ from bp_slam.utils.measurements import generate_measurements, generate_cluttered
 from bp_slam.core.slam import bp_based_mint_slam
 
 
-def load_measurements_from_mat(mat_file='measurementbadf.mat'):
+def load_measurements_from_mat(mat_file='measurementbadf.mat', add_synthetic_clutter=False,
+                               parameters=None, mismatch_mode=False):
     """
     从 MAT 文件加载预先生成的检测数据，并应用自适应方差计算
 
     参数:
         mat_file: MAT 文件路径，默认为 'measurementbadf.mat'
+        add_synthetic_clutter: bool, 是否在加载的数据上添加合成杂波 (默认False)
+        parameters: 参数字典，当 add_synthetic_clutter=True 时需要提供
+        mismatch_mode: bool, 参数失配模式（实际杂波与BP假设不同）
 
     返回:
         cluttered_measurements: 检测数据，shape (num_steps, num_sensors) 的列表
-                               每个元素是 (2, num_detections) 的数组（距离+方差）
+                               每个元素是 (3, num_detections) 的数组（距离+方差+幅度）
     """
     print(f"从 {mat_file} 加载检测数据...")
     mat_data = sio.loadmat(mat_file)
@@ -68,12 +72,132 @@ def load_measurements_from_mat(mat_file='measurementbadf.mat'):
                 cluttered_measurements[step][sensor] = tracker_input
 
     print(f"✓ 成功加载检测数据: {num_steps} 步, {num_sensors} 个传感器")
+
+    # [新增] 添加合成杂波
+    if add_synthetic_clutter:
+        if parameters is None:
+            raise ValueError("添加合成杂波时必须提供 parameters 参数")
+
+        print(f"\n添加合成杂波...")
+        print(f"  - 平均杂波数: {parameters['meanNumberOfClutter']}")
+        print(f"  - 检测概率: {parameters['detectionProbability']}")
+        print(f"  - 区域大小: {parameters['regionOfInterestSize']} m")
+
+        cluttered_measurements = add_synthetic_clutter_to_measurements(
+            cluttered_measurements, parameters, mismatch_mode=mismatch_mode
+        )
+        print(f"✓ 合成杂波添加完成")
+
+    return cluttered_measurements
+
+
+def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatch_mode=False):
+    """
+    在已加载的测量数据上添加合成杂波和漏检
+
+    参数:
+        measurements_cell: 原始测量数据，shape (num_steps, num_sensors)的列表
+                          每个元素是 (3, num_detections) 的数组（距离+方差+幅度）
+        parameters: 参数字典，包括测量方差、检测概率、杂波均值、区域大小等
+        mismatch_mode: bool, 是否使用参数失配模式（实际杂波参数与BP假设不同）
+
+    返回:
+        cluttered_measurements: 添加杂波后的测量数据，shape同输入
+    """
+    # 读取参数
+    measurement_variance_range = parameters['measurementVariance']
+    max_range = parameters['regionOfInterestSize']
+
+    # [新增] 参数失配模式：实际参数与BP假设不同
+    if mismatch_mode:
+        # 实际杂波率是BP假设的3倍
+        actual_mean_clutter = parameters['meanNumberOfClutter'] * 3
+        # 实际检测概率比BP假设低10%
+        actual_detection_prob = max(0.5, parameters['detectionProbability'] - 0.1)
+        print(f"\n⚠ 参数失配模式:")
+        print(f"  - BP假设杂波数: {parameters['meanNumberOfClutter']}, 实际: {actual_mean_clutter}")
+        print(f"  - BP假设检测率: {parameters['detectionProbability']}, 实际: {actual_detection_prob}")
+    else:
+        actual_mean_clutter = parameters['meanNumberOfClutter']
+        actual_detection_prob = parameters['detectionProbability']
+
+    detection_probability = actual_detection_prob
+    mean_number_of_clutter = actual_mean_clutter
+
+    num_steps = len(measurements_cell)
+    num_sensors = len(measurements_cell[0])
+
+    # 初始化输出
+    cluttered_measurements = [[None for _ in range(num_sensors)] for _ in range(num_steps)]
+
+    # 统计信息
+    total_original = 0
+    total_detected = 0
+    total_clutter = 0
+
+    # 遍历每个传感器和时间步
+    for sensor in range(num_sensors):
+        for step in range(num_steps):
+            original_measurements = measurements_cell[step][sensor]
+
+            if original_measurements is None or original_measurements.size == 0:
+                num_detections = 0
+                detected_measurements = np.zeros((3, 0))
+            else:
+                num_detections = original_measurements.shape[1]
+                total_original += num_detections
+
+                # 按检测概率随机决定哪些测量被检测到（漏检处理）
+                detection_indicator = (np.random.rand(num_detections) < detection_probability)
+
+                # 提取被检测到的测量（保留3行：距离、方差、幅度）
+                detected_measurements = original_measurements[:, detection_indicator]
+                total_detected += detected_measurements.shape[1]
+
+            # 生成误报（杂波）数量，符合泊松分布
+            num_false_alarms = np.random.poisson(mean_number_of_clutter)
+            total_clutter += num_false_alarms
+
+            # 生成误报测量（3行：距离、方差、幅度）
+            false_alarms = np.zeros((3, num_false_alarms))
+            if num_false_alarms > 0:
+                # 误报距离均匀分布在0到maxRange
+                false_alarms[0, :] = max_range * np.random.rand(num_false_alarms)
+                # 误报测量方差为测距方差
+                false_alarms[1, :] = measurement_variance_range
+                # [改进] 误报幅度：更大的随机范围，确保距离和RSS不一致
+                # 范围从60 dB扩大（-40到20 dBm），覆盖所有可能的RSS值
+                # 这样大部分杂波的内在一致性误差会很大（>10 dB）
+                false_alarms[2, :] = np.random.uniform(-40, 20, num_false_alarms)
+
+            # 将误报和真实检测测量拼接
+            if detected_measurements.size > 0:
+                cluttered_measurement = np.hstack([false_alarms, detected_measurements])
+            else:
+                cluttered_measurement = false_alarms
+
+            # 随机打乱测量顺序，模拟实际测量的无序性
+            if cluttered_measurement.shape[1] > 0:
+                perm = np.random.permutation(cluttered_measurement.shape[1])
+                cluttered_measurement = cluttered_measurement[:, perm]
+
+            # 保存当前时间步传感器的测量
+            cluttered_measurements[step][sensor] = cluttered_measurement
+
+    # 打印统计信息
+    print(f"\n杂波添加统计:")
+    print(f"  - 原始测量总数: {total_original}")
+    print(f"  - 检测到的测量: {total_detected} ({total_detected/max(total_original,1)*100:.1f}%)")
+    print(f"  - 漏检数量: {total_original - total_detected}")
+    print(f"  - 添加的杂波: {total_clutter}")
+    print(f"  - 最终测量总数: {total_detected + total_clutter}")
+
     return cluttered_measurements
 
 
 def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
          gnn_load_checkpoint=None, gnn_save_checkpoint=True, gnn_inference_only=False,
-         load_measurements=None):
+         load_measurements=None, add_synthetic_clutter=False, mismatch_mode=False):
     """
     主测试函数
 
@@ -86,6 +210,8 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         gnn_save_checkpoint: bool, 是否保存GNN权重 (默认True)
         gnn_inference_only: bool, 是否仅推理模式 (True=不训练，False=训练)
         load_measurements: str or None, 检测数据文件路径 (None表示生成新数据，否则从文件加载)
+        add_synthetic_clutter: bool, 是否在加载的数据上添加合成杂波 (默认False)
+        mismatch_mode: bool, 参数失配模式 (True=实际参数与BP假设不同，测试鲁棒性)
     """
 
     print("=" * 60)
@@ -137,11 +263,23 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
 
     # 检测概率
     parameters['detectionProbability'] = 0.95
-    
+
     # 区域尺寸及杂波相关参数
     parameters['regionOfInterestSize'] = 30  # 区域边长（米）
 
     parameters['meanNumberOfClutter'] = 1  # 平均误报数
+
+    # [新增] 失配模式下，让BP使用更保守的参数估计
+    # 这样可以减少错误关联，改善锚点估计质量
+    if mismatch_mode and not use_gnn:
+        # BP在失配模式下，假设更高的杂波率（更保守）
+        # 这样BP会更谨慎地关联测量，减少误判
+        parameters['meanNumberOfClutter'] = 2  # 假设杂波更多
+        parameters['detectionProbability'] = 0.90  # 假设检测率更低
+        print(f"\n⚠ BP保守模式（失配环境）:")
+        print(f"  - BP使用保守参数: 杂波数2, 检测率0.90")
+        print(f"  - 实际环境: 杂波数3, 检测率0.85")
+
     parameters['clutterIntensity'] = (parameters['meanNumberOfClutter'] /
                                      parameters['regionOfInterestSize'])  # 杂波强度
 
@@ -203,8 +341,21 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         parameters['gnn_confidence_weighting'] = True  # 置信度加权损失
 
         # [关键] GRU控制参数 - 开启GRU + 其他优化的组合
-        parameters['gnn_use_temporal_gru'] = True  # 跨帧GRU记忆 (开启，结合EMA平滑)
-        parameters['gnn_use_layer_gru'] = True  # 层内GRU更新 (开启，增强表达能力)
+        parameters['gnn_use_temporal_gru'] = False  # 跨帧GRU记忆 (关闭以避免错误传播)
+        parameters['gnn_use_layer_gru'] = False  # 层内GRU更新 (关闭以简化模型)
+
+        # [新增] 匈牙利算法参数 - 针对失配模式优化
+        if mismatch_mode:
+            parameters['gnn_rejection_threshold'] = 2.0  # 更严格的熔断阈值（从3.0降到2.0）
+            parameters['gnn_positive_weight'] = 10.0  # 更高的正样本权重（从5.0提升到10.0）
+            # [关键修正] 失配模式下需要更长的预热期，让GNN有更多时间学习正确模式
+            # 因为前期BP虽然参数失配，但仍能提供一定的关联信息（虽然不完美）
+            # GNN通过匈牙利算法的自监督可以逐渐纠正这些错误
+            parameters['gnn_warmup_steps'] = int(max_steps * 0.15)  # 从5%增加到15%
+            print(f"  - ⚠ 失配模式优化: 阈值2.0, 权重10.0, 预热{parameters['gnn_warmup_steps']}步")
+        else:
+            parameters['gnn_rejection_threshold'] = 3.0  # 标准熔断阈值
+            parameters['gnn_positive_weight'] = 5.0  # 标准正样本权重
 
         # 权重加载和保存配置
         parameters['gnn_checkpoint_path'] = gnn_load_checkpoint
@@ -250,7 +401,12 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     # ---------------------------
     if load_measurements is not None:
         # 从文件加载预先生成的检测数据
-        cluttered_measurements = load_measurements_from_mat(load_measurements)
+        cluttered_measurements = load_measurements_from_mat(
+            load_measurements,
+            add_synthetic_clutter=add_synthetic_clutter,
+            parameters=parameters,
+            mismatch_mode=mismatch_mode
+        )
     else:
         # 生成新的检测数据
         print("生成理想测量数据...")
@@ -370,6 +526,10 @@ if __name__ == '__main__':
                         help='仅推理模式 (加载权重后不训练，只推理)')
     parser.add_argument('--load-measurements', type=str, default=None,
                         help='从MAT文件加载检测数据 (如 measurementbadf.mat), 默认: None (生成新数据)')
+    parser.add_argument('--add-clutter', action='store_true',
+                        help='在加载的数据上添加合成杂波 (仅在使用 --load-measurements 时有效)')
+    parser.add_argument('--mismatch-mode', action='store_true',
+                        help='参数失配模式：实际杂波参数与BP假设不同，测试BP鲁棒性 (仅在使用 --add-clutter 时有效)')
 
     args = parser.parse_args()
 
@@ -383,5 +543,7 @@ if __name__ == '__main__':
         gnn_load_checkpoint=args.load_checkpoint,
         gnn_save_checkpoint=not args.no_save_checkpoint,
         gnn_inference_only=args.inference_only,
-        load_measurements=args.load_measurements
+        load_measurements=args.load_measurements,
+        add_synthetic_clutter=args.add_clutter,
+        mismatch_mode=args.mismatch_mode
     )

@@ -81,6 +81,10 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
         gnn_use_temporal_gru = parameters.get('gnn_use_temporal_gru', False)  # 默认关闭跨帧GRU
         gnn_use_layer_gru = parameters.get('gnn_use_layer_gru', False)  # 默认关闭层内GRU
 
+        # [新增] 匈牙利算法参数
+        gnn_rejection_threshold = parameters.get('gnn_rejection_threshold', 3.0)
+        gnn_positive_weight = parameters.get('gnn_positive_weight', 5.0)
+
         gnn_trainer = GNNTrainerImproved(
             device=gnn_device,
             lr=gnn_lr,
@@ -93,7 +97,9 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
             pseudo_label_mode=gnn_pseudo_label_mode,
             confidence_weighting=gnn_confidence_weighting,
             use_temporal_gru=gnn_use_temporal_gru,
-            use_layer_gru=gnn_use_layer_gru
+            use_layer_gru=gnn_use_layer_gru,
+            rejection_threshold=gnn_rejection_threshold,
+            positive_weight=gnn_positive_weight
         )
 
         # [关键] 每次开始新序列前，清空 GRU 记忆
@@ -198,60 +204,97 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
             for a in range(num_anchors):
                 existence_probs[a] = np.sum(weights_anchor[:, a])
 
-            # --- A. 计算物理模型概率 (Beta) ---
-            beta_matrix = np.zeros((num_measurements, num_anchors))
+            # --- A. [策略一] 物理海选：用内在一致性过滤明显杂波 ---
+            # 路径损耗参数
+            P_tx = 15.41
+            n = 2.0
 
-            for a in range(num_anchors):
-                for m in range(num_measurements):
-                    # 联合方差 S
-                    S = predicted_uncertainties[a] + measurements[1, m]
-                    # 残差 nu
-                    nu = measurements[0, m] - predicted_measurements[a]
-                    # 高斯似然
-                    likelihood = (1.0 / np.sqrt(2 * np.pi * S)) * np.exp(-0.5 * nu**2 / S)
-                    # 归一化因子
-                    beta_matrix[m, a] = likelihood * (detection_probability / clutter_intensity)
-
-            # --- B. 构建混合特征张量 (M, K, 5) ---
-            legacy_feat = np.zeros((num_measurements, num_anchors, 5))
+            # 计算所有测量的内在一致性误差
+            intrinsic_errors = np.zeros(num_measurements)
+            valid_mask = np.ones(num_measurements, dtype=bool)  # 标记哪些测量通过物理检查
 
             for m in range(num_measurements):
-                # === [新增] 第5个特征：幅度残差 ===
                 # 提取测量幅度
                 if measurements.shape[0] >= 3:
-                    rss_meas = measurements[2, m]  # 标量
+                    rss_meas = measurements[2, m]
                 else:
                     rss_meas = 0.0
 
-                # 计算预测幅度
-                P_tx = 15.41  # 校准后的发射功率 (dBm)
-                n = 2.0
-                safe_pred = np.maximum(predicted_measurements, 0.1)
-                rss_pred = P_tx - 10 * n * np.log10(safe_pred)  # 向量 (K,)
+                # [内在一致性] 使用测量距离计算理论RSS
+                safe_meas_dist = max(measurements[0, m], 0.1)
+                rss_theory = P_tx - 10 * n * np.log10(safe_meas_dist)
 
-                # 计算残差并归一化
-                # 除以 10 是为了让数值范围大致在 -1 到 1 之间
-                feat_amp_diff = (rss_meas - rss_pred) / 10.0
+                # 内在一致性误差（dB）
+                intrinsic_error_db = abs(rss_meas - rss_theory)
+                intrinsic_errors[m] = intrinsic_error_db / 10.0  # 归一化
+
+                # [物理海选] 如果误差 > 15 dB，直接标记为杂波
+                # 真实测量：误差通常 < 6 dB（考虑阴影衰落）
+                # 杂波：误差通常 > 15 dB（随机RSS，与距离无关）
+                if intrinsic_error_db > 15.0:
+                    valid_mask[m] = False
+
+            # 统计过滤结果
+            num_filtered = np.sum(~valid_mask)
+            if num_filtered > 0 and step % 50 == 0:
+                print(f"  [物理海选] 过滤掉 {num_filtered}/{num_measurements} 个物理不合理的测量")
+
+            # 只保留通过物理检查的测量
+            filtered_measurements = measurements[:, valid_mask]
+            filtered_intrinsic_errors = intrinsic_errors[valid_mask]
+            num_filtered_measurements = filtered_measurements.shape[1]
+
+            # --- B. 计算物理模型概率 (Beta) - 只对过滤后的测量计算 ---
+            beta_matrix_filtered = np.zeros((num_filtered_measurements, num_anchors))
+
+            for a in range(num_anchors):
+                for m in range(num_filtered_measurements):
+                    # 联合方差 S
+                    S = predicted_uncertainties[a] + filtered_measurements[1, m]
+                    # 残差 nu
+                    nu = filtered_measurements[0, m] - predicted_measurements[a]
+                    # 高斯似然
+                    likelihood = (1.0 / np.sqrt(2 * np.pi * S)) * np.exp(-0.5 * nu**2 / S)
+                    # 归一化因子
+                    beta_matrix_filtered[m, a] = likelihood * (detection_probability / clutter_intensity)
+
+            # --- C. 构建混合特征张量 (M_filtered, K, 5) ---
+            legacy_feat = np.zeros((num_filtered_measurements, num_anchors, 5))
+
+            # 预先计算所有锚点的预测RSS（用于Ch4的对级别RSS匹配）
+            rss_pred = np.zeros(num_anchors)
+            for a in range(num_anchors):
+                safe_pred_dist = max(predicted_measurements[a], 0.1)
+                rss_pred[a] = P_tx - 10 * n * np.log10(safe_pred_dist)
+
+            for m in range(num_filtered_measurements):
+                # 提取过滤后的测量幅度
+                if filtered_measurements.shape[0] >= 3:
+                    rss_meas = filtered_measurements[2, m]
+                else:
+                    rss_meas = 0.0
 
                 for a in range(num_anchors):
-                    # Ch0: Log-Prob (物理建议)
-                    legacy_feat[m, a, 0] = np.log(beta_matrix[m, a] + 1e-20)
+                    # Ch0: Log-Prob (物理建议) - 直接使用过滤后的beta矩阵
+                    legacy_feat[m, a, 0] = np.log(beta_matrix_filtered[m, a] + 1e-20)
 
                     # Ch1: 标准化残差 (GNN纠错核心)
-                    std_dev = np.sqrt(measurements[1, m] + predicted_uncertainties[a])
-                    legacy_feat[m, a, 1] = (measurements[0, m] - predicted_measurements[a]) / (std_dev + 1e-6)
+                    std_dev = np.sqrt(filtered_measurements[1, m] + predicted_uncertainties[a])
+                    legacy_feat[m, a, 1] = (filtered_measurements[0, m] - predicted_measurements[a]) / (std_dev + 1e-6)
 
                     # Ch2: 对数方差
-                    legacy_feat[m, a, 2] = np.log(measurements[1, m] + predicted_uncertainties[a] + 1e-6)
+                    legacy_feat[m, a, 2] = np.log(filtered_measurements[1, m] + predicted_uncertainties[a] + 1e-6)
 
                     # Ch3: 存在概率
                     legacy_feat[m, a, 3] = existence_probs[a]
 
-                    # Ch4: [新] 幅度残差
-                    legacy_feat[m, a, 4] = feat_amp_diff[a]
+                    # Ch4: [对级别] RSS残差（归一化）
+                    # 这个特征描述"测量m与锚点a的RSS匹配度"
+                    feat_amp_diff = abs(rss_meas - rss_pred[a]) / 5.0
+                    legacy_feat[m, a, 4] = feat_amp_diff
 
-            # --- C. 构建 New/Clutter 特征 (M, 1, 5) ---
-            new_feat = np.zeros((num_measurements, 1, 5))
+            # --- D. 构建 New/Clutter 特征 (M_filtered, 1, 5) ---
+            new_feat = np.zeros((num_filtered_measurements, 1, 5))
             # 计算 Xi 参考值 (Log域)
             mu_new = undetected_anchors_intensity[sensor]
             xi_val = np.log(1.0 + mu_new / clutter_intensity)
@@ -260,23 +303,24 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
             new_feat[:, 0, 1] = 0.0     # Ch1
             new_feat[:, 0, 2] = 2.0     # Ch2 (背景方差)
             new_feat[:, 0, 3] = 1.0     # Ch3
-            new_feat[:, 0, 4] = 0.5     # Ch4 (杂波的默认幅度)
+            # Ch4: 杂波的RSS特征（设为中等值）
+            new_feat[:, 0, 4] = 0.5
 
-            # --- D. GNN 训练与推理 ---
+            # --- E. GNN 训练与推理 ---
             use_gnn_result = False
             message_lhf_ratios = None
             messages_new = None
 
-            if gnn_trainer is not None and num_anchors > 0 and num_measurements > 0:
+            if gnn_trainer is not None and num_anchors > 0 and num_filtered_measurements > 0:
                 try:
                     # 拼接特征
                     hybrid_input = np.concatenate([legacy_feat, new_feat], axis=1)
                     hybrid_tensor = torch.from_numpy(hybrid_input).float().unsqueeze(0)
 
-                    # 执行一步自监督训练 (Hard-EM)
+                    # [关键修改] 执行一步自监督训练，使用过滤后的测量
                     gnn_probs, gnn_dustbin, loss = gnn_trainer.step(
                         hybrid_tensor,
-                        measurements,
+                        filtered_measurements,  # 使用过滤后的测量
                         predicted_measurements,
                         predicted_uncertainties
                     )
@@ -289,26 +333,26 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     if step > warmup_steps:
                         use_gnn_result = True
 
+                        # [关键] 将 GNN 概率映射回原始测量索引
+                        # GNN 输出: (M_filtered, K) 和 (M_filtered,)
+                        # 需要映射回: (M, K) 和 (M,)
+
+                        # 初始化原始尺寸的概率矩阵
+                        full_gnn_probs = np.zeros((num_measurements, num_anchors))
+                        full_gnn_dustbin = np.ones(num_measurements)  # 被过滤的测量默认为杂波
+
+                        # 将过滤后的结果映射回原始索引
+                        valid_indices = np.where(valid_mask)[0]
+                        full_gnn_probs[valid_indices, :] = gnn_probs
+                        full_gnn_dustbin[valid_indices] = gnn_dustbin
+
                         # [关键] 将 GNN 概率转换为 BP 消息格式
                         # message_lhf_ratios: (M, K) 表示测量-锚点关联强度
-                        message_lhf_ratios = gnn_probs / (gnn_dustbin[:, np.newaxis] + 1e-10)
+                        message_lhf_ratios = full_gnn_probs / (full_gnn_dustbin[:, np.newaxis] + 1e-10)
 
                         # [关键] 新锚点消息：基于杂波概率计算
                         # 杂波概率高 -> 新锚点可能性低
-                        # 使用指数抑制，防止锚点爆炸
-                        #messages_new = np.exp(-5.0 * gnn_dustbin)  # 指数抑制因子 = 5.0
-
-                        # 额外约束：杂波概率 > 0.6 时，完全禁止新锚点
-                        #messages_new[gnn_dustbin > 0.6] = 1e-10
-
-                        # 新代码 (更温和):
-                        # 1. 降低指数系数 (从 5.0 降到 2.0)，即使 GNN 认为是杂波，也保留一点点出生的可能性
-                        messages_new = np.exp(-0.5 * gnn_dustbin)
-                        
-                        # 2. 完全移除硬截断 (Delete or comment out this line):
-                        # messages_new[gnn_dustbin > 0.6] = 1e-10  <-- 删除这行
-                        
-                        # 3. 增加一个保底值，确保不会发生除零或完全消失
+                        messages_new = np.exp(-0.5 * full_gnn_dustbin)
                         messages_new = np.maximum(messages_new, 1e-6)
                         
                 except Exception as e:

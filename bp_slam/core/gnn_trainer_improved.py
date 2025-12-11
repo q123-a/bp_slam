@@ -8,13 +8,15 @@ import torch.nn.functional as F
 import numpy as np
 import random
 from pathlib import Path
+from scipy.optimize import linear_sum_assignment
 from .gnn_model import FactorGraphNeuralNetwork
 
 class GNNTrainerImproved:
     def __init__(self, device='cuda', lr=1e-3, hidden_dim=64, checkpoint_path=None, seed=42,
                  use_ema=True, ema_decay=0.999, use_lr_scheduler=True,
                  pseudo_label_mode='and', confidence_weighting=True,
-                 use_temporal_gru=False, use_layer_gru=False):
+                 use_temporal_gru=False, use_layer_gru=False,
+                 rejection_threshold=3.0, positive_weight=5.0):
         """
         初始化改进的 GNN 训练器
 
@@ -43,6 +45,8 @@ class GNNTrainerImproved:
         self.confidence_weighting = confidence_weighting
         self.use_temporal_gru = use_temporal_gru
         self.use_layer_gru = use_layer_gru
+        self.rejection_threshold = rejection_threshold
+        self.positive_weight = positive_weight
 
         # 设置随机种子以确保可复现性
         if seed is not None:
@@ -94,8 +98,9 @@ class GNNTrainerImproved:
             self.load_checkpoint(checkpoint_path)
 
         print(f"✓ GNN 训练器初始化完成")
-        print(f"  - 伪标签模式: {pseudo_label_mode}")
-        print(f"  - 置信度加权: {confidence_weighting}")
+        print(f"  - 损失函数: 匈牙利算法全局最优匹配")
+        print(f"  - 熔断阈值: {self.rejection_threshold} (几何+物理综合代价)")
+        print(f"  - 样本权重: 正样本 {self.positive_weight} / 杂波 1.0")
 
     def _set_seed(self, seed):
         """设置所有随机种子以确保可复现性"""
@@ -158,9 +163,9 @@ class GNNTrainerImproved:
             # 1. 前向推理
             logits, h_out = self.model(hybrid_tensor, h_in)  # (1, M, K+1), (1, hidden_dim)
 
-            # 2. 计算自监督 Loss (改进版)
-            loss = self._compute_improved_loss(
-                logits, measurements, predicted_measurements, predicted_variances
+            # 2. 计算自监督 Loss (通用匹配版 - 匈牙利算法)
+            loss = self._compute_universal_matching_loss(
+                logits, measurements, predicted_measurements, predicted_variances, hybrid_tensor
             )
 
             # 3. 反向传播
@@ -286,6 +291,123 @@ class GNNTrainerImproved:
                 target_indices,
                 label_smoothing=0.1
             )
+
+        return loss
+
+    def _compute_universal_matching_loss(self, logits, measurements, predicted_measurements, predicted_variances, hybrid_tensor):
+        """
+        Universal Physics-Aware Matching Loss
+        通用物理感知匹配损失：适用于无杂波和有杂波环境。
+
+        参数:
+            logits: (1, M, K+1) 模型输出
+            measurements: (3, M) 测量数据 [距离, 方差, 幅度]
+            predicted_measurements: (K,) 预测测量
+            predicted_variances: (K,) 预测方差
+            hybrid_tensor: (1, M, K+1, 5) 混合特征张量
+
+        返回:
+            loss: 标量损失值
+        """
+        M = measurements.shape[1]
+        K = predicted_measurements.shape[0]
+
+        # ------------------------------------------------------
+        # 1. 准备数据
+        # ------------------------------------------------------
+        z_geo = torch.from_numpy(measurements[0, :]).float().to(self.device)   # (M,) 距离
+        z_rss = torch.from_numpy(measurements[2, :]).float().to(self.device)   # (M,) 幅度
+
+        z_pred_geo = torch.from_numpy(predicted_measurements).float().to(self.device) # (K,)
+        var_meas = torch.from_numpy(measurements[1, :]).float().to(self.device)
+        var_pred = torch.from_numpy(predicted_variances).float().to(self.device)
+
+        # ------------------------------------------------------
+        # 2. 构建"几何+物理"综合代价矩阵
+        # ------------------------------------------------------
+
+        # A. 几何代价 (Mahalanobis Distance)
+        # 衡量空间位置的匹配度
+        joint_std = torch.sqrt(var_meas.unsqueeze(1) + var_pred.unsqueeze(0))
+        diff_geo = z_geo.unsqueeze(1) - z_pred_geo.unsqueeze(0)
+        cost_geo = torch.abs(diff_geo) / (joint_std + 1e-6) # (M, K)
+
+        # B. 物理代价 (Amplitude/RSS Compatibility)
+        # 衡量信号特征的匹配度 (从 hybrid_tensor 提取或直接计算)
+        # 假设 hybrid_tensor 第4维是归一化的 RSS 残差
+        cost_phy = torch.abs(hybrid_tensor[0, :, :K, 4]) # (M, K)
+
+        # C. 动态加权 (可选，进阶)
+        # 如果信号强，几何权重大；如果信号弱，几何权重小
+        # [关键修改] 在失配模式下，降低几何权重，提高物理权重
+        # 因为几何代价依赖predicted_measurements，而失配模式下预测可能不准
+        # 物理代价（幅度）是直接测量，不受预测影响
+        if self.rejection_threshold < 2.5:  # 失配模式的标志
+            w_geo = 0.5  # 降低几何权重
+            w_phy = 2.0  # 提高物理权重
+        else:
+            w_geo = 1.0
+            w_phy = 1.5
+
+        # D. 总代价矩阵
+        total_cost_matrix = w_geo * cost_geo + w_phy * cost_phy
+
+        # ------------------------------------------------------
+        # 3. 匈牙利算法 (Global Assignment)
+        # ------------------------------------------------------
+        # 即使 M > K (有杂波)，它也会选出 Top-K 个"嫌疑人"
+        # 即使 M < K (漏检)，它也会尽力匹配
+        cost_np = total_cost_matrix.detach().cpu().numpy()
+        row_ind, col_ind = linear_sum_assignment(cost_np)
+
+        # ------------------------------------------------------
+        # 4. 熔断机制 (Gating / Rejection) - 关键！
+        # ------------------------------------------------------
+        # 初始化所有目标为 "垃圾桶/杂波" (索引 K)
+        target_indices = torch.full((M,), K, dtype=torch.long, device=self.device)
+
+        # 定义熔断门槛 (Cost Threshold)
+        # 只有 Cost 小于此值的匹配，才被承认
+        # 使用可配置的阈值，失配模式下会更严格
+        REJECTION_THRESHOLD = self.rejection_threshold
+
+        for i, match_idx in enumerate(row_ind):
+            anchor_idx = col_ind[i]
+            match_cost = total_cost_matrix[match_idx, anchor_idx]
+
+            # [通用逻辑核心]
+            # 无杂波时：真值 Cost 比如 0.5 < threshold -> 匹配成功 (Target = anchor_idx)
+            # 有杂波时：杂波 Cost 比如 5.1 > threshold -> 熔断拒绝 (Target 保持为 K)
+            if match_cost < REJECTION_THRESHOLD:
+                target_indices[match_idx] = anchor_idx
+
+        # ------------------------------------------------------
+        # 5. 计算 Loss (包含垃圾桶列)
+        # ------------------------------------------------------
+        # 既然要处理杂波，必须允许网络输出第 K+1 列 (索引 K)
+        logits_all = logits.view(M, K+1)
+
+        # 加权 Loss (可选)：给正样本更高权重，防止被大量杂波淹没
+        weights = torch.ones(M, device=self.device)
+        # 找到正样本 (不是杂波的)
+        pos_mask = (target_indices != K)
+
+        # [调试] 统计正负样本比例
+        num_positive = pos_mask.sum().item()
+        num_negative = M - num_positive
+
+        if pos_mask.sum() > 0:
+            weights[pos_mask] = self.positive_weight # 强迫网络关注那几个真匹配
+
+        # [调试] 每100步打印一次统计信息
+        if hasattr(self, 'step_count') and self.step_count % 100 == 0:
+            print(f"\n[Step {self.step_count}] 样本统计:")
+            print(f"  正样本: {num_positive}/{M} ({num_positive/M*100:.1f}%)")
+            print(f"  负样本: {num_negative}/{M} ({num_negative/M*100:.1f}%)")
+            print(f"  失衡比例: 1:{num_negative/max(num_positive,1):.2f}")
+
+        loss = F.cross_entropy(logits_all, target_indices, reduction='none', label_smoothing=0.1)
+        loss = (loss * weights).mean()
 
         return loss
 
