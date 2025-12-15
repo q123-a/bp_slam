@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import linear_sum_assignment
 
 
-def ospa_dist(X, Y, c, p):
+def ospa_dist(X, Y, c, p, existence_weights=None):
     """
     计算两个有限点集的OSPA距离
 
@@ -16,6 +16,8 @@ def ospa_dist(X, Y, c, p):
         X, Y: 点集，shape (2, n) 和 (2, m)，列为点坐标
         c: 截断参数，限制单点距离的惩罚
         p: 指数参数，用于计算p阶范数
+        existence_weights: (可选) Y 中每个点的存在概率权重，shape (m,)
+                          用于软计数，避免硬阈值导致的 OSPA 尖峰
 
     返回:
         dist: 计算得到的X和Y之间的OSPA距离
@@ -37,26 +39,37 @@ def ospa_dist(X, Y, c, p):
     if X is None or X.size == 0 or Y is None or Y.size == 0:
         n = 0 if X is None or X.size == 0 else X.shape[1]
         m = 0 if Y is None or Y.size == 0 else Y.shape[1]
+
+        # [修正] 如果使用软计数，m 应该是存在概率之和
+        if existence_weights is not None and Y is not None and Y.size > 0:
+            m = np.sum(existence_weights)
+
         dist = c
         return dist, 0, c
 
     # 获取两个集合的点数
     n = X.shape[1]
-    m = Y.shape[1]
+    m_raw = Y.shape[1]
+
+    # [修正] 使用软计数：m 是存在概率之和，而不是硬计数
+    if existence_weights is not None:
+        m = np.sum(existence_weights)
+    else:
+        m = m_raw
 
     # 计算所有点对之间的欧氏距离矩阵D，大小 n×m
     # D[i,j] = distance between X[:,i] and Y[:,j]
     # 使用广播计算：X[:, :, np.newaxis] - Y[:, np.newaxis, :]
-    # 结果shape: (2, n, m)
-    diff = X[:, :, np.newaxis] - Y[:, np.newaxis, :]  # shape: (2, n, m)
-    D = np.sqrt(np.sum(diff**2, axis=0))  # shape: (n, m)
+    # 结果shape: (2, n, m_raw)
+    diff = X[:, :, np.newaxis] - Y[:, np.newaxis, :]  # shape: (2, n, m_raw)
+    D = np.sqrt(np.sum(diff**2, axis=0))  # shape: (n, m_raw)
     D = np.minimum(c, D)**p  # 截断并取p次方
 
     # 使用匈牙利算法（最小权匹配）求解最优分配
     row_ind, col_ind = linear_sum_assignment(D)
     cost = D[row_ind, col_ind].sum()
 
-    # 计算总体OSPA距离
+    # 计算总体OSPA距离（使用软计数 m）
     dist = (1 / max(m, n) * (c**p * abs(m - n) + cost))**(1 / p)
 
     # 如果需要返回位置误差和基数误差
@@ -84,7 +97,7 @@ def plot_scatter_2d(X, color='b', marker='.', markersize=1, alpha=0.3):
 
 def plot_all(true_trajectory, estimated_trajectory, estimated_anchors,
             posterior_particles_anchors, num_estimated_anchors,
-            data_va, parameters, mode=0, num_steps=None):
+            data_va, parameters, mode=0, num_steps=None, run_mode='bp'):
     """
     绘制所有结果：真实轨迹、估计轨迹、锚点估计等
 
@@ -98,6 +111,7 @@ def plot_all(true_trajectory, estimated_trajectory, estimated_anchors,
         parameters: 参数字典
         mode: 绘图模式（0=最终状态，1=动画）
         num_steps: 时间步数
+        run_mode: 运行模式（'bp' 或 'gnn'），用于区分保存的图片名称
     """
     if num_steps is None:
         num_steps = true_trajectory.shape[1]
@@ -175,17 +189,18 @@ def plot_all(true_trajectory, estimated_trajectory, estimated_anchors,
     plt.grid(True, alpha=0.3)
     plt.axis('equal')
     plt.tight_layout()
-    plt.savefig('bp_slam_results.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'bp_slam_results_{run_mode}.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
-def plot_trajectory_error(true_trajectory, estimated_trajectory):
+def plot_trajectory_error(true_trajectory, estimated_trajectory, run_mode='bp'):
     """
     绘制轨迹估计误差随时间变化
 
     参数:
         true_trajectory: 真实轨迹，shape (n_dims, num_steps)
         estimated_trajectory: 估计轨迹，shape (4, num_steps)
+        run_mode: 运行模式（'bp' 或 'gnn'），用于区分保存的图片名称
     """
     num_steps = true_trajectory.shape[1]
     errors = np.sqrt(np.sum((true_trajectory[0:2, :] - estimated_trajectory[0:2, :])**2, axis=0))
@@ -197,7 +212,7 @@ def plot_trajectory_error(true_trajectory, estimated_trajectory):
     plt.title('Trajectory Estimation Error', fontsize=14)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig('trajectory_error.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'trajectory_error_{run_mode}.png', dpi=300, bbox_inches='tight')
     plt.show()
 
     print(f'Mean position error: {np.mean(errors):.4f} m')

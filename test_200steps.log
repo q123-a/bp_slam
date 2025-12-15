@@ -1,0 +1,306 @@
+日志文件: logs/testbed_bp_20251211_202831.log
+============================================================
+BP-SLAM 测试 (纯 BP)
+Steps: 200, Particles: 100000
+============================================================
+生成理想测量数据...
+生成带杂波测量数据...
+
+开始运行BP-SLAM算法 (纯 BP 模式)...
+
+============================================================
+Time instance: 2
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 8
+Position error agent: 0.195075
+Execution Time: 0.7934
+---------------------------------------------------
+
+Time instance: 3
+Number of Anchors Sensor 1: 13
+Number of Anchors Sensor 2: 15
+Position error agent: 0.130375
+Execution Time: 0.8078
+---------------------------------------------------
+
+Time instance: 4
+Number of Anchors Sensor 1: 12
+Number of Anchors Sensor 2: 18
+Position error agent: 0.093958
+Execution Time: 1.3494
+---------------------------------------------------
+
+Time instance: 5
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 17
+Position error agent: 0.104901
+Execution Time: 1.2531
+---------------------------------------------------
+
+Time instance: 6
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 11
+Position error agent: 0.086776
+Execution Time: 1.0940
+---------------------------------------------------
+
+Time instance: 7
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 11
+Position error agent: 0.077183
+Execution Time: 0.6177
+---------------------------------------------------
+
+Time instance: 8
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 10
+Position error agent: 0.073716
+Execution Time: 1.0356
+---------------------------------------------------
+
+Time instance: 9
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 10
+Position error agent: 0.074053
+Execution Time: 0.8308
+---------------------------------------------------
+
+Time instance: 10
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 10
+Position error agent: 0.071609
+Execution Time: 0.7454
+---------------------------------------------------
+
+Time instance: 11
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 11
+Position error agent: 0.052548
+Execution Time: 0.8299
+---------------------------------------------------
+
+Time instance: 12
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 9
+Position error agent: 0.069184
+Execution Time: 0.7810
+---------------------------------------------------
+
+Time instance: 13
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 9
+Position error agent: 0.077511
+Execution Time: 0.7082
+---------------------------------------------------
+
+Time instance: 14
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 10
+Position error agent: 0.087505
+Execution Time: 0.8510
+---------------------------------------------------
+
+Time instance: 15
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 10
+Position error agent: 0.095664
+Execution Time: 1.0256
+---------------------------------------------------
+
+Time instance: 16
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 8
+Position error agent: 0.110910
+Execution Time: 0.8148
+---------------------------------------------------
+
+Time instance: 17
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 7
+Position error agent: 0.095141
+Execution Time: 0.7844
+---------------------------------------------------
+
+Time instance: 18
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 7
+Position error agent: 0.096085
+Execution Time: 0.6898
+---------------------------------------------------
+
+Time instance: 19
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 7
+Position error agent: 0.104767
+Execution Time: 0.5986
+---------------------------------------------------
+
+Time instance: 20
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 7
+Position error agent: 0.120717
+Execution Time: 0.6258
+---------------------------------------------------
+
+Time instance: 21
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 9
+Position error agent: 0.086070
+Execution Time: 0.7417
+---------------------------------------------------
+
+Time instance: 22
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 5
+Position error agent: 0.083244
+Execution Time: 0.8558
+---------------------------------------------------
+
+Time instance: 23
+Number of Anchors Sensor 1: 8
+Number of Anchors Sensor 2: 5
+Position error agent: 0.087816
+Execution Time: 0.7427
+---------------------------------------------------
+
+Time instance: 24
+Number of Anchors Sensor 1: 8
+Number of Anchors Sensor 2: 5
+Position error agent: 0.097503
+Execution Time: 0.7268
+---------------------------------------------------
+
+Time instance: 25
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 6
+Position error agent: 0.090321
+Execution Time: 0.6980
+---------------------------------------------------
+
+Time instance: 26
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.073306
+Execution Time: 0.5466
+---------------------------------------------------
+
+Time instance: 27
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 6
+Position error agent: 0.067289
+Execution Time: 0.6185
+---------------------------------------------------
+
+Time instance: 28
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 6
+Position error agent: 0.076142
+Execution Time: 0.6836
+---------------------------------------------------
+
+Time instance: 29
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 7
+Position error agent: 0.113476
+Execution Time: 0.6732
+---------------------------------------------------
+
+Time instance: 30
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 5
+Position error agent: 0.108469
+Execution Time: 0.6027
+---------------------------------------------------
+
+Time instance: 31
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.068500
+Execution Time: 0.5756
+---------------------------------------------------
+
+Time instance: 32
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.069802
+Execution Time: 0.6261
+---------------------------------------------------
+
+Time instance: 33
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.101098
+Execution Time: 0.5636
+---------------------------------------------------
+
+Time instance: 34
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.098145
+Execution Time: 0.5869
+---------------------------------------------------
+
+Time instance: 35
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.072915
+Execution Time: 0.6159
+---------------------------------------------------
+
+Time instance: 36
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 6
+Position error agent: 0.091429
+Execution Time: 0.6286
+---------------------------------------------------
+
+Time instance: 37
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.102051
+Execution Time: 0.6026
+---------------------------------------------------
+
+Time instance: 38
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.070511
+Execution Time: 0.6625
+---------------------------------------------------
+
+Time instance: 39
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.071408
+Execution Time: 0.5156
+---------------------------------------------------
+
+Time instance: 40
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.094449
+Execution Time: 0.5484
+---------------------------------------------------
+
+Time instance: 41
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 5
+Position error agent: 0.084949
+Execution Time: 0.5400
+---------------------------------------------------
+
+Time instance: 42
+Number of Anchors Sensor 1: 6
+Number of Anchors Sensor 2: 5
+Position error agent: 0.087982
+Execution Time: 0.5697
+---------------------------------------------------
+
+Time instance: 43
+Number of Anchors Sensor 1: 7
+Number of Anchors Sensor 2: 6
+Position error agent: 0.086381
+Execution Time: 0.5582
+---------------------------------------------------
+
+Time instance: 44

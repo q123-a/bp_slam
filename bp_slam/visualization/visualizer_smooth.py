@@ -197,9 +197,15 @@ class BPSLAMVisualizer:
         return fig
 
     def plot_ospa_error(self, true_trajectory, estimated_trajectory,
-                       estimated_anchors, data_va, parameters):
+                       estimated_anchors, data_va, parameters, use_soft_ospa=True,
+                       smooth_window=None, smooth_method='moving_avg'):
         """
         绘制OSPA地图误差（图2）
+
+        参数:
+            use_soft_ospa: 是否使用软OSPA（基于存在概率权重），避免硬阈值导致的尖峰
+            smooth_window: 平滑窗口大小（None表示不平滑，推荐5-15）
+            smooth_method: 平滑方法 ('moving_avg'=移动平均, 'exponential'=指数平滑, 'savgol'=Savitzky-Golay)
 
         返回:
             fig: matplotlib图形对象
@@ -209,10 +215,6 @@ class BPSLAMVisualizer:
         num_steps = true_trajectory.shape[1]
         detection_threshold = parameters.get('detectionThreshold', 0.5)
 
-        # [新增] 新锚点试用期参数（默认10帧）
-        # 核心思想：新锚点在试用期内不参与OSPA计算，防止初始化不稳定导致OSPA尖峰
-        probation_period = parameters.get('gnn_new_anchor_probation', 10)
-
         dist_ospa_map = np.zeros((num_sensors, num_steps))
 
         # 计算每个时间步的OSPA误差
@@ -220,8 +222,9 @@ class BPSLAMVisualizer:
             true_anchor_positions = data_va[sensor]['positions']
 
             for step in range(num_steps):
-                # 提取估计的锚点位置
+                # 提取估计的锚点位置和存在概率
                 estimated_anchor_positions = []
+                existence_weights = []
 
                 if estimated_anchors[sensor][step] is not None:
                     for anchor in estimated_anchors[sensor][step]:
@@ -229,25 +232,37 @@ class BPSLAMVisualizer:
                             anchor_pos = anchor['x']
                             anchor_existence = anchor['posteriorExistence']
 
-                            # [新增] 试用期过滤：只有"成年"的锚点才参与OSPA评分
-                            # 获取锚点出生时间，如果没有记录则默认为0（老锚点）
-                            born_time = anchor.get('generatedAt', 0)
-                            age = step - born_time
-
-                            # 过滤条件：
-                            # 1. 存在概率超过阈值
-                            # 2. 锚点年龄 >= 试用期
-                            if anchor_existence >= detection_threshold and age >= probation_period:
+                            if use_soft_ospa:
+                                # 软OSPA: 包含所有锚点，使用存在概率作为权重
                                 estimated_anchor_positions.append(anchor_pos)
+                                existence_weights.append(anchor_existence)
+                            else:
+                                # 硬OSPA: 只包含超过阈值的锚点
+                                if anchor_existence >= detection_threshold:
+                                    estimated_anchor_positions.append(anchor_pos)
 
                 if len(estimated_anchor_positions) > 0:
                     estimated_anchor_positions = np.array(estimated_anchor_positions).T
+                    if use_soft_ospa:
+                        existence_weights = np.array(existence_weights)
+                    else:
+                        existence_weights = None
                 else:
                     estimated_anchor_positions = np.zeros((2, 0))
+                    existence_weights = None
 
-                # 计算OSPA距离
-                ospa, _, _ = ospa_dist(true_anchor_positions, estimated_anchor_positions, 10, 1)
+                # 计算OSPA距离（软OSPA会使用存在概率权重）
+                ospa, _, _ = ospa_dist(
+                    true_anchor_positions,
+                    estimated_anchor_positions,
+                    10, 1,
+                    existence_weights=existence_weights
+                )
                 dist_ospa_map[sensor, step] = ospa
+
+        # 应用时间平滑
+        if smooth_window is not None and smooth_window > 1:
+            dist_ospa_map = self._smooth_ospa(dist_ospa_map, smooth_window, smooth_method)
 
         # 绘制图形
         fig, ax = plt.subplots(figsize=(12, 6))
@@ -259,13 +274,69 @@ class BPSLAMVisualizer:
 
         ax.set_xlabel('Trajectory steps', fontsize=12)
         ax.set_ylabel('OSPA map error [m]', fontsize=12)
-        ax.set_title('OSPA Distance for Anchor Estimation', fontsize=14)
+        title = 'OSPA Distance for Anchor Estimation'
+        if use_soft_ospa:
+            title += ' (Soft OSPA)'
+        if smooth_window is not None and smooth_window > 1:
+            title += f' [Smoothed: {smooth_method}, window={smooth_window}]'
+        ax.set_title(title, fontsize=14)
         ax.set_xlim([0, num_steps])
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=10)
 
         plt.tight_layout()
         return fig, dist_ospa_map
+
+    def _smooth_ospa(self, ospa_map, window_size, method='moving_avg'):
+        """
+        对OSPA误差进行时间平滑
+
+        参数:
+            ospa_map: OSPA误差矩阵 (num_sensors, num_steps)
+            window_size: 平滑窗口大小
+            method: 平滑方法
+
+        返回:
+            smoothed_map: 平滑后的OSPA误差矩阵
+        """
+        from scipy.ndimage import uniform_filter1d
+        from scipy.signal import savgol_filter
+
+        num_sensors, num_steps = ospa_map.shape
+        smoothed_map = np.zeros_like(ospa_map)
+
+        for sensor in range(num_sensors):
+            if method == 'moving_avg':
+                # 移动平均（简单但有效）
+                smoothed_map[sensor, :] = uniform_filter1d(
+                    ospa_map[sensor, :], size=window_size, mode='nearest'
+                )
+            elif method == 'exponential':
+                # 指数加权移动平均（对最近的数据赋予更高权重）
+                alpha = 2.0 / (window_size + 1)
+                smoothed = np.zeros(num_steps)
+                smoothed[0] = ospa_map[sensor, 0]
+                for t in range(1, num_steps):
+                    smoothed[t] = alpha * ospa_map[sensor, t] + (1 - alpha) * smoothed[t-1]
+                smoothed_map[sensor, :] = smoothed
+            elif method == 'savgol':
+                # Savitzky-Golay滤波器（保持峰值形状但平滑噪声）
+                # 窗口必须是奇数
+                win = window_size if window_size % 2 == 1 else window_size + 1
+                win = min(win, num_steps - 1)
+                if win % 2 == 0:
+                    win -= 1
+                if win >= 3:
+                    smoothed_map[sensor, :] = savgol_filter(
+                        ospa_map[sensor, :], window_length=win, polyorder=2
+                    )
+                else:
+                    smoothed_map[sensor, :] = ospa_map[sensor, :]
+            else:
+                # 未知方法，不平滑
+                smoothed_map[sensor, :] = ospa_map[sensor, :]
+
+        return smoothed_map
 
     def plot_position_error(self, true_trajectory, estimated_trajectory):
         """

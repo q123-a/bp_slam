@@ -1,0 +1,356 @@
+日志文件: logs/testbed_gnn_mismatch_20251211_205146.log
+============================================================
+BP-SLAM 测试 (BP + GNN)
+Steps: 30, Particles: 100000
+============================================================
+  - ⚠ 失配模式优化: 阈值4.0, 权重10.0, 预热1步
+
+[GNN 配置 - 双头架构版本]
+  - 架构模式: 双头 (质量头+关联头)
+  - 预热步数: 1 (自动计算)
+  - 隐藏维度: 64
+  - 学习率: 0.0001
+  - EMA: True (decay=0.9995)
+  - 学习率调度: True
+  - 质量阈值: 0.25
+  - 损失权重: 质量=1.5, 关联=1.0
+  - 关联熔断阈值: 3.0
+  - 跨帧GRU: False (关闭以避免错误传播)
+  - 层内GRU: False (关闭以简化模型)
+  - 新锚点缓冲区: 阈值=0.5, 最少帧数=2, 最大间隔=3
+  - 训练模式: 从头开始
+  - 保存权重: checkpoints/gnn_model.pth
+从 measurement1500.mat 加载检测数据...
+✓ 成功加载检测数据: 900 步, 2 个传感器
+
+添加合成杂波...
+  - 平均杂波数: 1
+  - 检测概率: 0.95
+  - 区域大小: 30 m
+
+⚠ 参数失配模式:
+  - BP假设杂波数: 1, 实际: 3
+  - BP假设检测率: 0.95, 实际: 0.85
+
+杂波添加统计:
+  - 原始测量总数: 9678
+  - 检测到的测量: 8241 (85.2%)
+  - 漏检数量: 1437
+  - 添加的杂波: 5286
+  - 最终测量总数: 13527
+✓ 合成杂波添加完成
+
+开始运行BP-SLAM算法 (BP + GNN 模式)...
+
+============================================================
+✓ 双头GNN训练器初始化完成
+  - 质量阈值: 0.25
+  - 关联阈值: 3.0
+  - 损失权重: 质量=1.5, 关联=1.0
+✓ 双头GNN训练器已初始化 (cuda)
+  - 预热步数: 1
+  - 质量阈值: 0.25
+  - 关联阈值: 3.0
+
+[质量头诊断 - Step 0]
+  总测量数: 5
+  好点 (RSS误差<8dB): 5 (100.0%)
+  坏点 (RSS误差>15dB): 0 (0.0%)
+  不确定 (8-15dB): 0 (0.0%)
+  平均质量分数: 0.474
+  RSS误差范围: [1.1, 6.9] dB
+
+[关联头诊断 - Step 0]
+  质量好的测量: 5/5 (100.0%)
+  匹配成功 (cost<3.0): 1/5 (20.0%)
+  匹配代价范围: [0.08, 0.08]
+
+[损失分解 - Step 0]
+  质量损失: 0.7472 (权重=1.5)
+  关联损失: 0.0000 (权重=1.0)
+  总损失: 1.1208
+  加权贡献: 质量=1.1208, 关联=0.0000
+Time instance: 2
+Number of Anchors Sensor 1: 9
+Number of Anchors Sensor 2: 8
+Position error agent: 0.001982
+Execution Time: 1.3484
+---------------------------------------------------
+
+Time instance: 3
+Number of Anchors Sensor 1: 14
+Number of Anchors Sensor 2: 13
+Position error agent: 0.001610
+Execution Time: 1.0002
+---------------------------------------------------
+
+Time instance: 4
+Number of Anchors Sensor 1: 20
+Number of Anchors Sensor 2: 17
+Position error agent: 0.009743
+Execution Time: 1.2659
+---------------------------------------------------
+
+Time instance: 5
+Number of Anchors Sensor 1: 21
+Number of Anchors Sensor 2: 20
+Position error agent: 0.012432
+Execution Time: 2.0320
+---------------------------------------------------
+
+Time instance: 6
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 18
+Position error agent: 0.018070
+Execution Time: 2.0989
+---------------------------------------------------
+
+Time instance: 7
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 17
+Position error agent: 0.024668
+Execution Time: 1.8394
+---------------------------------------------------
+
+Time instance: 8
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 17
+Position error agent: 0.032711
+Execution Time: 1.9502
+---------------------------------------------------
+
+Time instance: 9
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.038150
+Execution Time: 2.0139
+---------------------------------------------------
+
+Time instance: 10
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.044354
+Execution Time: 2.0511
+---------------------------------------------------
+
+  [双头GNN] Sensor 1, Step 10, Loss: 3.1462
+    质量统计: 6/6 个高质量测量
+  [双头GNN] Sensor 2, Step 10, Loss: 3.1458
+    质量统计: 5/5 个高质量测量
+Time instance: 11
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.046435
+Execution Time: 1.6802
+---------------------------------------------------
+
+Time instance: 12
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.047365
+Execution Time: 1.6853
+---------------------------------------------------
+
+Time instance: 13
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.050399
+Execution Time: 1.5309
+---------------------------------------------------
+
+Time instance: 14
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.044339
+Execution Time: 1.7969
+---------------------------------------------------
+
+Time instance: 15
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.049165
+Execution Time: 1.6268
+---------------------------------------------------
+
+Time instance: 16
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.040244
+Execution Time: 1.7334
+---------------------------------------------------
+
+Time instance: 17
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.037721
+Execution Time: 1.7542
+---------------------------------------------------
+
+Time instance: 18
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.039904
+Execution Time: 1.5706
+---------------------------------------------------
+
+Time instance: 19
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.038805
+Execution Time: 1.5502
+---------------------------------------------------
+
+Time instance: 20
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.036330
+Execution Time: 1.5214
+---------------------------------------------------
+
+  [双头GNN] Sensor 1, Step 20, Loss: 2.3759
+    质量统计: 6/6 个高质量测量
+  [双头GNN] Sensor 2, Step 20, Loss: 2.4249
+    质量统计: 6/6 个高质量测量
+Time instance: 21
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.036276
+Execution Time: 1.8261
+---------------------------------------------------
+
+Time instance: 22
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.043663
+Execution Time: 1.7353
+---------------------------------------------------
+
+Time instance: 23
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.040916
+Execution Time: 1.7804
+---------------------------------------------------
+
+Time instance: 24
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.035214
+Execution Time: 1.7777
+---------------------------------------------------
+
+Time instance: 25
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.038943
+Execution Time: 1.7740
+---------------------------------------------------
+
+Time instance: 26
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.037496
+Execution Time: 1.6915
+---------------------------------------------------
+
+
+[质量头诊断 - Step 50]
+  总测量数: 5
+  好点 (RSS误差<8dB): 4 (80.0%)
+  坏点 (RSS误差>15dB): 0 (0.0%)
+  不确定 (8-15dB): 1 (20.0%)
+  平均质量分数: 0.841
+  RSS误差范围: [3.0, 8.1] dB
+
+[关联头诊断 - Step 50]
+  质量好的测量: 5/5 (100.0%)
+  匹配成功 (cost<3.0): 5/5 (100.0%)
+  匹配代价范围: [0.05, 0.23]
+
+[损失分解 - Step 50]
+  质量损失: 0.1705 (权重=1.5)
+  关联损失: 1.7207 (权重=1.0)
+  总损失: 1.9765
+  加权贡献: 质量=0.2558, 关联=1.7207
+Time instance: 27
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.038217
+Execution Time: 1.8743
+---------------------------------------------------
+
+Time instance: 28
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.036719
+Execution Time: 1.9027
+---------------------------------------------------
+
+Time instance: 29
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.037384
+Execution Time: 1.9725
+---------------------------------------------------
+
+Time instance: 30
+Number of Anchors Sensor 1: 17
+Number of Anchors Sensor 2: 16
+Position error agent: 0.039177
+Execution Time: 1.5395
+---------------------------------------------------
+
+
+============================================================
+算法运行完成！
+最终估计的锚点数量 - 传感器1: 17
+最终估计的锚点数量 - 传感器2: 16
+最终位置误差: 0.0392 m
+平均位置误差: 0.0333 m
+最大位置误差: 0.0504 m
+
+计算OSPA地图误差...
+[OSPA调试] 使用软计数: m_raw=1, m_soft=1.00, weights=[1.]
+[OSPA调试] 使用软计数: m_raw=8, m_soft=5.90, weights=[0.9999536  0.70416926 0.55545104 0.59641562 0.48767512 0.85966238
+ 0.86042025 0.83649471]
+[OSPA调试] 使用软计数: m_raw=8, m_soft=5.04, weights=[0.99993875 0.90312175 0.83006452 0.84907324 0.78542883 0.23319615
+ 0.23431699 0.20270696]
+传感器 1 OSPA误差: 平均=7.2054 m, 最大=8.3333 m
+传感器 2 OSPA误差: 平均=8.4936 m, 最大=8.9406 m
+
+保存结果到 results/results_gnn.npz...
+完成！结果已保存到 results/results_gnn.npz
+
+生成可视化图表...
+   ✓ 成功加载场景文件: scen_semroom_new.mat
+======================================================================
+生成MATLAB风格可视化图表
+======================================================================
+
+1. 生成图1: 轨迹和锚点...
+   ✓ 绘制 105 个墙壁线段
+   ✓ 图1已保存: results/figure1_trajectory_anchors_gnn.png
+2. 生成图2: OSPA地图误差...
+   ✓ 图2已保存: results/figure2_ospa_error_gnn.png
+3. 生成图3: 位置误差...
+   ✓ 图3已保存: results/figure3_position_error_gnn.png
+
+======================================================================
+误差统计 (Error Statistics)
+======================================================================
+平均位置误差 (Mean Position Error): 0.0333 m
+最大位置误差 (Max Position Error):  0.0504 m
+最终位置误差 (Final Position Error): 0.0392 m
+
+传感器 1 平均OSPA误差: 7.1949 m
+传感器 2 平均OSPA误差: 8.4711 m
+======================================================================
+
+
+提示：关闭图表窗口以继续...
+
+============================================================
+✓ 完整测试完成 (BP + GNN 模式)！
+============================================================
+
+日志已保存到: logs/testbed_gnn_mismatch_20251211_205146.log

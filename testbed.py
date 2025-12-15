@@ -6,10 +6,34 @@ Main test script for BP-SLAM algorithm
 Converted from MATLAB testbed.m
 """
 
+import sys
+import os
+from datetime import datetime
 import numpy as np
 import scipy.io as sio
 from bp_slam.utils.measurements import generate_measurements, generate_cluttered_measurements
 from bp_slam.core.slam import bp_based_mint_slam
+
+
+class Logger:
+    """
+    日志类：同时输出到终端和文件
+    """
+    def __init__(self, log_file):
+        self.terminal = sys.stdout
+        self.log = open(log_file, 'w', encoding='utf-8')
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+        self.log.flush()  # 立即写入文件
+
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+
+    def close(self):
+        self.log.close()
 
 
 def load_measurements_from_mat(mat_file='measurementbadf.mat', add_synthetic_clutter=False,
@@ -165,10 +189,39 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
                 false_alarms[0, :] = max_range * np.random.rand(num_false_alarms)
                 # 误报测量方差为测距方差
                 false_alarms[1, :] = measurement_variance_range
-                # [改进] 误报幅度：更大的随机范围，确保距离和RSS不一致
-                # 范围从60 dB扩大（-40到20 dBm），覆盖所有可能的RSS值
-                # 这样大部分杂波的内在一致性误差会很大（>10 dB）
-                false_alarms[2, :] = np.random.uniform(-40, 20, num_false_alarms)
+                # [阶段二改进] 物理相关性杂波 (Physics-Based Clutter)
+                # 核心思想：真实杂波不是随机的，而是遵循物理规律
+                # 杂波通常是反射/多径信号，遵循：RSS_clutter ≈ RSS_theory(d) - Δ
+                # 其中 Δ 是反射损耗（3-20dB）
+                #
+                # 这样生成的杂波：
+                # 1. 符合距离衰减规律（看起来像真信号）
+                # 2. 只是稍微弱一点（反射损耗）
+                # 3. 是GNN最难分辨的对手！
+
+                # 路径损耗参数（与slam.py保持一致）
+                P_tx = 15.41
+                n = 2.0
+
+                # 1. 计算杂波距离对应的理论RSS（假设是直达波）
+                clutter_dists = false_alarms[0, :]
+                safe_dists = np.maximum(clutter_dists, 0.1)  # 防止log(0)
+                rss_theory = P_tx - 10 * n * np.log10(safe_dists)
+
+                # 2. 生成反射损耗 (Reflection Loss)
+                # 反射损耗在 3dB 到 20dB 之间均匀分布
+                # 3dB: 轻微反射（墙面、地面）
+                # 20dB: 强烈衰减（多次反射、穿墙）
+                reflection_loss = np.random.uniform(3.0, 20.0, num_false_alarms)
+
+                # 3. 合成杂波RSS = 理论值 - 反射损耗 + 小噪声
+                # 添加小噪声（2dB标准差）模拟测量不确定性
+                false_alarms[2, :] = rss_theory - reflection_loss + np.random.normal(0, 2.0, num_false_alarms)
+
+                # 结果：
+                # - 近距离杂波：RSS高，但比理论值低3-20dB
+                # - 远距离杂波：RSS低，但仍然符合衰减规律
+                # - 非常难以区分！需要GNN学习更复杂的模式
 
             # 将误报和真实检测测量拼接
             if detected_measurements.size > 0:
@@ -214,6 +267,25 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         mismatch_mode: bool, 参数失配模式 (True=实际参数与BP假设不同，测试鲁棒性)
     """
 
+    # ---------------------------
+    # 初始化日志系统
+    # ---------------------------
+    # 创建日志目录
+    log_dir = 'logs'
+    os.makedirs(log_dir, exist_ok=True)
+
+    # 生成日志文件名：logs/testbed_gnn_20231211_153045.log
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    mode_str = 'gnn' if use_gnn else 'bp'
+    mismatch_str = '_mismatch' if mismatch_mode else ''
+    log_file = os.path.join(log_dir, f'testbed_{mode_str}{mismatch_str}_{timestamp}.log')
+
+    # 重定向标准输出到日志文件
+    logger = Logger(log_file)
+    sys.stdout = logger
+    sys.stderr = logger
+
+    print(f"日志文件: {log_file}")
     print("=" * 60)
     if use_gnn:
         print("BP-SLAM 测试 (BP + GNN)")
@@ -331,7 +403,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
             warmup_source = "自动计算"
 
         parameters['gnn_hidden_dim'] = 64  # 隐藏层维度
-        parameters['gnn_lr'] = 1e-5  # 学习率 (进一步降低到1e-5，最大化稳定性)
+        parameters['gnn_lr'] = 1e-4  # [修正] 学习率降低到1e-4，防止过拟合
 
         # [改进版] 新增参数 - 针对连续凸起问题优化
         parameters['gnn_use_ema'] = True  # 使用指数移动平均
@@ -340,19 +412,40 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         parameters['gnn_pseudo_label_mode'] = 'or'  # 伪标签模式: 'and', 'or', 'adaptive'
         parameters['gnn_confidence_weighting'] = True  # 置信度加权损失
 
-        # [关键] GRU控制参数 - 开启GRU + 其他优化的组合
-        parameters['gnn_use_temporal_gru'] = False  # 跨帧GRU记忆 (关闭以避免错误传播)
+        # [关键] GRU控制参数 - 开启节点级GRU时序记忆
+        #
+        # [改进] 开启跨帧GRU记忆，让模型拥有"记忆"能力
+        # 核心优势：
+        # 1. 防止过度自信：即使当前帧RSS误差小，但如果前几帧没见过，GRU会保留意见
+        # 2. 时序平滑：消除OSPA尖峰，获得更平滑的曲线
+        # 3. 节点级记忆：每个测量-锚点对独立记忆（而非全局共享）
+        # 4. 梯度截断：trainer内部使用.detach()防止错误传播
+        parameters['gnn_use_temporal_gru'] = True  # [改进] 开启跨帧节点级GRU记忆
         parameters['gnn_use_layer_gru'] = False  # 层内GRU更新 (关闭以简化模型)
+
+        # [新增] 双头架构参数
+        parameters['gnn_use_dual_head'] = True  # 使用双头架构（质量头+关联头）
+        parameters['gnn_quality_threshold'] = 0.25  # [微调] 质量判断阈值降低到0.25，避免过滤真实锚点
+        parameters['gnn_quality_weight'] = 1.5  # [修正] 质量损失权重降低到1.5，防止过拟合
+        parameters['gnn_assoc_weight'] = 1.0  # [综合方案] 关联损失权重保持1.0
+        parameters['gnn_assoc_threshold'] = 3.0  # 关联熔断阈值
+
+        # [新增] 新锚点候选缓冲区参数（防止瞬时噪声被误判为新锚点）
+        parameters['gnn_new_anchor_threshold'] = 0.5  # [微调] messages_new 阈值降低到0.5，更容易添加新锚点
+        parameters['gnn_new_anchor_min_frames'] = 2  # [微调] 最少连续检测帧数降低到2
+        parameters['gnn_new_anchor_max_gap'] = 3  # [微调] 允许的最大间隔帧数增加到3
 
         # [新增] 匈牙利算法参数 - 针对失配模式优化
         if mismatch_mode:
-            parameters['gnn_rejection_threshold'] = 2.0  # 更严格的熔断阈值（从3.0降到2.0）
+            parameters['gnn_rejection_threshold'] = 4.0  # [修正] 放宽熔断阈值到4.0，适应预测不准确
             parameters['gnn_positive_weight'] = 10.0  # 更高的正样本权重（从5.0提升到10.0）
-            # [关键修正] 失配模式下需要更长的预热期，让GNN有更多时间学习正确模式
-            # 因为前期BP虽然参数失配，但仍能提供一定的关联信息（虽然不完美）
-            # GNN通过匈牙利算法的自监督可以逐渐纠正这些错误
-            parameters['gnn_warmup_steps'] = int(max_steps * 0.15)  # 从5%增加到15%
-            print(f"  - ⚠ 失配模式优化: 阈值2.0, 权重10.0, 预热{parameters['gnn_warmup_steps']}步")
+            # [关键修正] 双头架构下，质量头不依赖BP预测，可以快速启动
+            # 只需要少量预热让模型稳定即可
+            if parameters.get('gnn_use_dual_head', False):
+                parameters['gnn_warmup_steps'] = int(max_steps * 0.05)  # 双头：5%预热（45步）
+            else:
+                parameters['gnn_warmup_steps'] = int(max_steps * 0.10)  # 单头：10%预热（90步）
+            print(f"  - ⚠ 失配模式优化: 阈值4.0, 权重10.0, 预热{parameters['gnn_warmup_steps']}步")
         else:
             parameters['gnn_rejection_threshold'] = 3.0  # 标准熔断阈值
             parameters['gnn_positive_weight'] = 5.0  # 标准正样本权重
@@ -363,16 +456,23 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         parameters['gnn_checkpoint_save_path'] = 'checkpoints/gnn_model.pth'
         parameters['gnn_inference_only'] = gnn_inference_only
 
-        print(f"\n[GNN 配置 - 改进版 (GRU + 优化)]")
+        print(f"\n[GNN 配置 - 双头架构版本]")
+        print(f"  - 架构模式: {'双头 (质量头+关联头)' if parameters['gnn_use_dual_head'] else '单头'}")
         print(f"  - 预热步数: {parameters['gnn_warmup_steps']} ({warmup_source})")
         print(f"  - 隐藏维度: {parameters['gnn_hidden_dim']}")
         print(f"  - 学习率: {parameters['gnn_lr']}")
         print(f"  - EMA: {parameters['gnn_use_ema']} (decay={parameters['gnn_ema_decay']})")
         print(f"  - 学习率调度: {parameters['gnn_use_lr_scheduler']}")
-        print(f"  - 伪标签模式: {parameters['gnn_pseudo_label_mode']}")
-        print(f"  - 置信度加权: {parameters['gnn_confidence_weighting']}")
-        print(f"  - 跨帧GRU: {parameters['gnn_use_temporal_gru']} (关闭以避免错误传播)")
+        if parameters['gnn_use_dual_head']:
+            print(f"  - 质量阈值: {parameters['gnn_quality_threshold']}")
+            print(f"  - 损失权重: 质量={parameters['gnn_quality_weight']}, 关联={parameters['gnn_assoc_weight']}")
+            print(f"  - 关联熔断阈值: {parameters['gnn_assoc_threshold']}")
+        else:
+            print(f"  - 伪标签模式: {parameters['gnn_pseudo_label_mode']}")
+            print(f"  - 置信度加权: {parameters['gnn_confidence_weighting']}")
+        print(f"  - 跨帧GRU: {parameters['gnn_use_temporal_gru']} {'✓ 节点级时序记忆' if parameters['gnn_use_temporal_gru'] else '(关闭)'}")
         print(f"  - 层内GRU: {parameters['gnn_use_layer_gru']} (关闭以简化模型)")
+        print(f"  - 新锚点缓冲区: 阈值={parameters['gnn_new_anchor_threshold']}, 最少帧数={parameters['gnn_new_anchor_min_frames']}, 最大间隔={parameters['gnn_new_anchor_max_gap']}")
 
         if gnn_load_checkpoint:
             print(f"  - 加载权重: {gnn_load_checkpoint}")
@@ -445,6 +545,44 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     print(f"最大位置误差: {max_error:.4f} m")
 
     # ---------------------------
+    # 7.5. 计算OSPA误差（每个传感器）
+    # ---------------------------
+    print("\n计算OSPA地图误差...")
+    from bp_slam.visualization.plotting import ospa_dist
+
+    num_sensors = len(data_va)
+    num_steps = true_trajectory.shape[1]
+    ospa_errors = np.zeros((num_sensors, num_steps))
+
+    for sensor in range(num_sensors):
+        true_anchor_positions = data_va[sensor]['positions']
+
+        for step in range(num_steps):
+            # 获取估计的锚点位置
+            if estimated_anchors[sensor][step] is not None and len(estimated_anchors[sensor][step]) > 0:
+                estimated_positions = []
+                for anchor in estimated_anchors[sensor][step]:
+                    if anchor is not None and 'x' in anchor:
+                        if anchor['posteriorExistence'] > parameters['detectionThreshold']:
+                            estimated_positions.append(anchor['x'])
+
+                if len(estimated_positions) > 0:
+                    estimated_anchor_positions = np.array(estimated_positions).T
+                else:
+                    estimated_anchor_positions = None
+            else:
+                estimated_anchor_positions = None
+
+            # 计算OSPA距离
+            ospa, _, _ = ospa_dist(true_anchor_positions, estimated_anchor_positions, 10, 1)
+            ospa_errors[sensor, step] = ospa
+
+    # 打印OSPA统计
+    for sensor in range(num_sensors):
+        print(f"传感器 {sensor + 1} OSPA误差: 平均={np.mean(ospa_errors[sensor, :]):.4f} m, "
+              f"最大={np.max(ospa_errors[sensor, :]):.4f} m")
+
+    # ---------------------------
     # 8. 保存结果
     # ---------------------------
     # 创建results文件夹
@@ -466,6 +604,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
              mean_error=mean_error,
              max_error=max_error,
              final_error=final_error,
+             ospa_errors=ospa_errors,
              allow_pickle=True)
 
     print(f"完成！结果已保存到 results/{result_filename}")
@@ -487,7 +626,8 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
             scene_file='scen_semroom_new.mat',
             output_dir='results',
             save=True,
-            show=True
+            show=True,
+            mode='gnn' if use_gnn else 'bp'
         )
 
         print("\n提示：关闭图表窗口以继续...")
@@ -501,6 +641,12 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     print("\n" + "=" * 60)
     print(f"✓ 完整测试完成 ({mode_str} 模式)！")
     print("=" * 60)
+
+    # 关闭日志文件
+    print(f"\n日志已保存到: {log_file}")
+    logger.close()
+    sys.stdout = logger.terminal
+    sys.stderr = logger.terminal
 
     return estimated_trajectory, estimated_anchors, num_estimated_anchors
 
