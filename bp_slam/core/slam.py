@@ -16,15 +16,22 @@ from .anchors import (init_anchors, predict_anchors, predict_measurements,
                      generate_new_anchors, delete_unreliable_va)
 from .association import calculate_association_probabilities_ga
 
-# FGNN 相关导入
+# FGNN 相关导入 - 支持多版本切换
 try:
     import torch
+    # V1: 原始版本 (Hard Max)
     from .gnn_trainer_improved import GNNTrainerImproved, JointDualHeadTrainer
+    # V2: Softmax聚合 + 边特征增强
+    from .gnn_trainer_v2 import JointDualHeadTrainerV2
+    # V3: 显式因子节点
+    from .gnn_trainer_v3 import JointDualHeadTrainerV3
     FGNN_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     FGNN_AVAILABLE = False
     JointDualHeadTrainer = None
-    print("Warning: PyTorch not available. FGNN mode disabled.")
+    JointDualHeadTrainerV2 = None
+    JointDualHeadTrainerV3 = None
+    print(f"Warning: PyTorch not available. FGNN mode disabled. Error: {e}")
 
 
 def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_trajectory):
@@ -62,11 +69,12 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
     exec_time_per_step = np.zeros(num_steps)
     known_track = parameters['known_track']
 
-    # [新增] 初始化 GNN 训练器
+    # [新增] 初始化 GNN 训练器 - 支持多版本切换
     gnn_trainer = None
     use_gnn = parameters.get('use_gnn', False)
     warmup_steps = parameters.get('gnn_warmup_steps', 50)
     use_dual_head = parameters.get('gnn_use_dual_head', False)  # 是否使用双头架构
+    gnn_version = parameters.get('gnn_version', 'v2')  # GNN版本: 'v1', 'v2', 'v3'
 
     # [新增] GRU隐藏状态管理（每个传感器独立维护）
     # 格式: gnn_hidden_states[sensor] = (M*K, hidden_dim) 的tensor
@@ -85,6 +93,11 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
         gnn_use_temporal_gru = parameters.get('gnn_use_temporal_gru', False)  # 默认关闭跨帧GRU
         gnn_use_layer_gru = parameters.get('gnn_use_layer_gru', False)  # 默认关闭层内GRU
 
+        # V2/V3 特有参数
+        gnn_aggregation = parameters.get('gnn_aggregation', 'softmax')  # 聚合方式
+        gnn_gamma = parameters.get('gnn_gamma', 3.0)  # Softmax温度参数
+        gnn_edge_mode = parameters.get('gnn_edge_mode', 'concat')  # 边特征模式
+
         if use_dual_head:
             # ===== 双头架构 =====
             quality_threshold = parameters.get('gnn_quality_threshold', 0.5)
@@ -92,24 +105,83 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
             quality_weight = parameters.get('gnn_quality_weight', 1.0)
             assoc_weight = parameters.get('gnn_assoc_weight', 2.0)
 
-            gnn_trainer = JointDualHeadTrainer(
-                device=gnn_device,
-                lr=gnn_lr,
-                hidden_dim=gnn_hidden_dim,
-                checkpoint_path=gnn_checkpoint_path,
-                seed=42,
-                use_ema=gnn_use_ema,
-                ema_decay=gnn_ema_decay,
-                use_lr_scheduler=gnn_use_lr_scheduler,
-                use_temporal_gru=gnn_use_temporal_gru,
-                use_layer_gru=gnn_use_layer_gru,
-                quality_threshold=quality_threshold,
-                assoc_threshold=assoc_threshold,
-                quality_weight=quality_weight,
-                assoc_weight=assoc_weight
-            )
+            # 根据版本选择对应的训练器
+            if gnn_version == 'v1':
+                # V1: 原始版本 (Hard Max)
+                gnn_trainer = JointDualHeadTrainer(
+                    device=gnn_device,
+                    lr=gnn_lr,
+                    hidden_dim=gnn_hidden_dim,
+                    checkpoint_path=gnn_checkpoint_path,
+                    seed=42,
+                    use_ema=gnn_use_ema,
+                    ema_decay=gnn_ema_decay,
+                    use_lr_scheduler=gnn_use_lr_scheduler,
+                    use_temporal_gru=gnn_use_temporal_gru,
+                    use_layer_gru=gnn_use_layer_gru,
+                    quality_threshold=quality_threshold,
+                    assoc_threshold=assoc_threshold,
+                    quality_weight=quality_weight,
+                    assoc_weight=assoc_weight
+                )
+                print(f"✓ 双头GNN训练器 V1 已初始化 ({gnn_device})")
+                print(f"  - 架构: 隐式因子图 (Hard Max)")
 
-            print(f"✓ 双头GNN训练器已初始化 ({gnn_device})")
+            elif gnn_version == 'v2':
+                # V2: Softmax聚合 + 边特征增强
+                gnn_trainer = JointDualHeadTrainerV2(
+                    device=gnn_device,
+                    lr=gnn_lr,
+                    hidden_dim=gnn_hidden_dim,
+                    checkpoint_path=gnn_checkpoint_path,
+                    seed=42,
+                    use_ema=gnn_use_ema,
+                    ema_decay=gnn_ema_decay,
+                    use_lr_scheduler=gnn_use_lr_scheduler,
+                    use_temporal_gru=gnn_use_temporal_gru,
+                    use_layer_gru=gnn_use_layer_gru,
+                    quality_threshold=quality_threshold,
+                    assoc_threshold=assoc_threshold,
+                    quality_weight=quality_weight,
+                    assoc_weight=assoc_weight,
+                    aggregation=gnn_aggregation,
+                    gamma=gnn_gamma,
+                    edge_mode=gnn_edge_mode
+                )
+                print(f"✓ 双头GNN训练器 V2 已初始化 ({gnn_device})")
+                print(f"  - 架构: 隐式因子图 (Softmax聚合)")
+                print(f"  - 聚合方式: {gnn_aggregation} (gamma={gnn_gamma})")
+                print(f"  - 边特征模式: {gnn_edge_mode}")
+
+            elif gnn_version == 'v3':
+                # V3: 显式因子节点
+                gnn_trainer = JointDualHeadTrainerV3(
+                    device=gnn_device,
+                    lr=gnn_lr,
+                    hidden_dim=gnn_hidden_dim,
+                    checkpoint_path=gnn_checkpoint_path,
+                    seed=42,
+                    use_ema=gnn_use_ema,
+                    ema_decay=gnn_ema_decay,
+                    use_lr_scheduler=gnn_use_lr_scheduler,
+                    use_temporal_gru=gnn_use_temporal_gru,
+                    use_layer_gru=gnn_use_layer_gru,
+                    quality_threshold=quality_threshold,
+                    assoc_threshold=assoc_threshold,
+                    quality_weight=quality_weight,
+                    assoc_weight=assoc_weight,
+                    aggregation=gnn_aggregation,
+                    gamma=gnn_gamma,
+                    edge_mode=gnn_edge_mode
+                )
+                print(f"✓ 双头GNN训练器 V3 已初始化 ({gnn_device})")
+                print(f"  - 架构: 显式因子节点 (两阶段消息传递)")
+                print(f"  - 聚合方式: {gnn_aggregation} (gamma={gnn_gamma})")
+                print(f"  - 边特征模式: {gnn_edge_mode}")
+
+            else:
+                raise ValueError(f"未知的GNN版本: {gnn_version}，支持的版本: 'v1', 'v2', 'v3'")
+
             print(f"  - 预热步数: {warmup_steps}")
             print(f"  - 质量阈值: {quality_threshold}")
             print(f"  - 关联阈值: {assoc_threshold}")
@@ -151,6 +223,9 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
     num_estimated_anchors = np.zeros((num_sensors, num_steps), dtype=int)
     storing_idx = list(range(29, num_steps, 30))  # 每30步存储一次锚点粒子状态（Python从0开始）
     posterior_particles_anchors_storage = [None] * len(storing_idx)
+
+    # [新增] GNN Loss 历史记录（每一步一个loss，批量训练所有传感器）
+    loss_history = np.zeros(num_steps)  # shape: (num_steps,)
 
     # [新增] 新锚点候选缓冲区（防止瞬时噪声被误判为新锚点）
     # 结构: candidate_anchors[sensor] = {meas_idx: {'position': [x, y], 'count': N, 'last_step': step}}
@@ -367,18 +442,22 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                         # ===== 双头架构推理 =====
                         # [改进] GRU状态现在在trainer内部维护，不需要外部传递
 
-                        # 前向推理（返回3个值：assoc_probs, dustbin_probs, loss）
-                        assoc_probs, dustbin_probs, loss = gnn_trainer.step(
+                        # 前向推理（返回4个值：assoc_probs, dustbin_probs, final_scale, loss）
+                        assoc_probs, dustbin_probs, sigma_scale, loss = gnn_trainer.step(
                             hybrid_tensor,
                             filtered_measurements,
                             predicted_measurements,
-                            predicted_uncertainties
+                            predicted_uncertainties,
+                            sensor_id=sensor  # 传入 sensor_id 以支持独立的 GRU 状态
                         )
+
+                        # [新增] 累积 loss（稍后取平均）
+                        loss_history[step] += loss / num_sensors
 
                         # assoc_probs: (M_filtered, K) 关联概率
                         # dustbin_probs: (M_filtered,) 杂波概率 [0, 1]
+                        # sigma_scale: (M_filtered,) 方差膨胀系数
                         # 注意：dustbin_probs = 1.0 - quality_scores
-
                         # 打印 Loss 和数据统计
                         if step % 10 == 0:
                             print(f"  [双头GNN] Sensor {sensor+1}, Step {step}, Loss: {loss:.4f}")
@@ -415,9 +494,9 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                             full_gnn_probs = np.zeros((num_measurements, num_anchors))
                             full_gnn_dustbin = np.ones(num_measurements)  # 被过滤的测量默认为杂波
 
-                            valid_indices = np.where(valid_mask)[0]
-                            full_gnn_probs[valid_indices, :] = gnn_probs
-                            full_gnn_dustbin[valid_indices] = gnn_dustbin_filtered
+                            valid_indices_for_mapping = np.where(valid_mask)[0]
+                            full_gnn_probs[valid_indices_for_mapping, :] = gnn_probs
+                            full_gnn_dustbin[valid_indices_for_mapping] = gnn_dustbin_filtered
 
                             # 4. 转换为 BP 消息格式
                             # message_lhf_ratios: (M, K) 表示测量-锚点关联强度
@@ -507,12 +586,16 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
 
                     else:
                         # ===== 单头架构推理（原有逻辑） =====
-                        gnn_probs, gnn_dustbin, loss = gnn_trainer.step(
+                        gnn_probs, gnn_dustbin, _, loss = gnn_trainer.step(
                             hybrid_tensor,
                             filtered_measurements,  # 使用过滤后的测量
                             predicted_measurements,
-                            predicted_uncertainties
+                            predicted_uncertainties,
+                            sensor_id=sensor  # 传入 sensor_id 以支持独立的 GRU 状态
                         )
+
+                        # [新增] 累积 loss（稍后取平均）
+                        loss_history[step] += loss / num_sensors
 
                         # 打印 Loss
                         if step % 10 == 0:
@@ -679,8 +762,6 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     diff = z - predicted_range
 
                     # 累加权重 (利用广播机制)
-                    # factor * ratio[None, :] -> (1, num_anchors)
-                    # exp term -> (num_particles, num_anchors)
                     weights += (factor * ratio[np.newaxis, :] * np.exp(-0.5 * (diff**2) / R))
             else:
                 # 没有测量时，所有权重为未检测概率
@@ -826,4 +907,4 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
         print(f'Execution Time: {exec_time_per_step[step]:.4f}')
         print('---------------------------------------------------\n')
 
-    return estimated_trajectory, estimated_anchors, posterior_particles_anchors_storage, num_estimated_anchors
+    return estimated_trajectory, estimated_anchors, posterior_particles_anchors_storage, num_estimated_anchors, loss_history

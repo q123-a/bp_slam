@@ -134,42 +134,46 @@ def analyze_results(results_file):
     return stats
 
 
-def compare_results(bp_file='results/results_bp.npz',
-                   gnn_file='results/results_gnn.npz'):
+def compare_results(file1='results/results_bp.npz',
+                   file2='results/results_gnn.npz',
+                   label1='Method 1',
+                   label2='Method 2'):
     """
-    对比 BP 和 GNN 的结果
+    对比两个结果文件
 
     参数:
-        bp_file: BP 结果文件路径
-        gnn_file: GNN 结果文件路径
+        file1: 第一个结果文件路径
+        file2: 第二个结果文件路径
+        label1: 第一个方法的标签 (用于显示)
+        label2: 第二个方法的标签 (用于显示)
     """
     print("\n" + "=" * 70)
-    print("对比 BP 和 GNN 结果")
+    print(f"对比 {label1} 和 {label2} 结果")
     print("=" * 70)
 
     # 检查文件是否存在
-    if not Path(bp_file).exists():
-        print(f"警告: BP 结果文件不存在: {bp_file}")
-        bp_stats = None
+    if not Path(file1).exists():
+        print(f"警告: 结果文件不存在: {file1}")
+        stats1 = None
     else:
-        print(f"\n分析 BP 结果...")
-        bp_stats = analyze_results(bp_file)
+        print(f"\n分析 {label1} 结果...")
+        stats1 = analyze_results(file1)
 
-    if not Path(gnn_file).exists():
-        print(f"警告: GNN 结果文件不存在: {gnn_file}")
-        gnn_stats = None
+    if not Path(file2).exists():
+        print(f"警告: 结果文件不存在: {file2}")
+        stats2 = None
     else:
-        print(f"\n分析 GNN 结果...")
-        gnn_stats = analyze_results(gnn_file)
+        print(f"\n分析 {label2} 结果...")
+        stats2 = analyze_results(file2)
 
     # 对比
-    if bp_stats is not None and gnn_stats is not None:
+    if stats1 is not None and stats2 is not None:
         print("\n" + "=" * 70)
         print("对比结果 (Comparison)")
         print("=" * 70)
 
         print("\n位置误差对比:")
-        print(f"{'指标':<20} {'BP':<15} {'GNN':<15} {'改进':<15}")
+        print(f"{'指标':<20} {label1:<15} {label2:<15} {'改进':<15}")
         print("-" * 70)
 
         metrics = [
@@ -182,26 +186,28 @@ def compare_results(bp_file='results/results_bp.npz',
         ]
 
         for name, key, unit in metrics:
-            bp_val = bp_stats[key]
-            gnn_val = gnn_stats[key]
-            improvement = (bp_val - gnn_val) / bp_val * 100
-            print(f"{name:<20} {bp_val:<15.6f} {gnn_val:<15.6f} {improvement:>+6.2f}%")
+            val1 = stats1[key]
+            val2 = stats2[key]
+            improvement = (val1 - val2) / val1 * 100
+            print(f"{name:<20} {val1:<15.6f} {val2:<15.6f} {improvement:>+6.2f}%")
 
         print("\n" + "=" * 70)
 
         # 绘制对比图
-        plot_comparison(bp_stats, gnn_stats)
+        plot_comparison(stats1, stats2, label1=label1, label2=label2)
 
-    return bp_stats, gnn_stats
+    return stats1, stats2
 
 
-def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
+def plot_comparison(stats1, stats2, label1='Method 1', label2='Method 2', save_dir='results'):
     """
-    绘制 BP 和 GNN 的对比图
+    绘制两个方法的对比图
 
     参数:
-        bp_stats: BP 统计信息
-        gnn_stats: GNN 统计信息
+        stats1: 第一个方法的统计信息
+        stats2: 第二个方法的统计信息
+        label1: 第一个方法的标签
+        label2: 第二个方法的标签
         save_dir: 保存目录
     """
     save_dir = Path(save_dir)
@@ -211,13 +217,13 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     # 确定最小的时间步数，以对齐两个轨迹
-    min_steps = min(bp_stats['num_steps'], gnn_stats['num_steps'])
+    min_steps = min(stats1['num_steps'], stats2['num_steps'])
 
     # 1. 位置误差随时间变化
     ax = axes[0, 0]
     steps = np.arange(min_steps)
-    ax.plot(steps, bp_stats['position_errors'][:min_steps], 'b-', linewidth=1.5, label='BP', alpha=0.7)
-    ax.plot(steps, gnn_stats['position_errors'][:min_steps], 'r-', linewidth=1.5, label='GNN', alpha=0.7)
+    ax.plot(steps, stats1['position_errors'][:min_steps], 'b-', linewidth=1.5, label=label1, alpha=0.7)
+    ax.plot(steps, stats2['position_errors'][:min_steps], 'r-', linewidth=1.5, label=label2, alpha=0.7)
     ax.set_xlabel('Time Step', fontsize=12)
     ax.set_ylabel('Position Error (m)', fontsize=12)
     ax.set_title('Position Error over Time', fontsize=14)
@@ -226,8 +232,8 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
 
     # 2. X 方向误差对比
     ax = axes[0, 1]
-    ax.plot(steps, bp_stats['x_errors'][:min_steps], 'b-', linewidth=1.5, label='BP', alpha=0.7)
-    ax.plot(steps, gnn_stats['x_errors'][:min_steps], 'r-', linewidth=1.5, label='GNN', alpha=0.7)
+    ax.plot(steps, stats1['x_errors'][:min_steps], 'b-', linewidth=1.5, label=label1, alpha=0.7)
+    ax.plot(steps, stats2['x_errors'][:min_steps], 'r-', linewidth=1.5, label=label2, alpha=0.7)
     ax.axhline(y=0, color='k', linestyle='--', linewidth=0.5)
     ax.set_xlabel('Time Step', fontsize=12)
     ax.set_ylabel('X Error (m)', fontsize=12)
@@ -237,8 +243,8 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
 
     # 3. Y 方向误差对比
     ax = axes[1, 0]
-    ax.plot(steps, bp_stats['y_errors'][:min_steps], 'b-', linewidth=1.5, label='BP', alpha=0.7)
-    ax.plot(steps, gnn_stats['y_errors'][:min_steps], 'r-', linewidth=1.5, label='GNN', alpha=0.7)
+    ax.plot(steps, stats1['y_errors'][:min_steps], 'b-', linewidth=1.5, label=label1, alpha=0.7)
+    ax.plot(steps, stats2['y_errors'][:min_steps], 'r-', linewidth=1.5, label=label2, alpha=0.7)
     ax.axhline(y=0, color='k', linestyle='--', linewidth=0.5)
     ax.set_xlabel('Time Step', fontsize=12)
     ax.set_ylabel('Y Error (m)', fontsize=12)
@@ -249,23 +255,23 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
     # 4. 统计指标对比柱状图
     ax = axes[1, 1]
     metrics = ['Mean', 'Std Dev', 'RMSE', 'Max']
-    bp_values = [
-        bp_stats['position_mean'],
-        bp_stats['position_std'],
-        bp_stats['position_rmse'],
-        bp_stats['position_max']
+    values1 = [
+        stats1['position_mean'],
+        stats1['position_std'],
+        stats1['position_rmse'],
+        stats1['position_max']
     ]
-    gnn_values = [
-        gnn_stats['position_mean'],
-        gnn_stats['position_std'],
-        gnn_stats['position_rmse'],
-        gnn_stats['position_max']
+    values2 = [
+        stats2['position_mean'],
+        stats2['position_std'],
+        stats2['position_rmse'],
+        stats2['position_max']
     ]
 
     x = np.arange(len(metrics))
     width = 0.35
-    ax.bar(x - width/2, bp_values, width, label='BP', color='blue', alpha=0.7)
-    ax.bar(x + width/2, gnn_values, width, label='GNN', color='red', alpha=0.7)
+    ax.bar(x - width/2, values1, width, label=label1, color='blue', alpha=0.7)
+    ax.bar(x + width/2, values2, width, label=label2, color='red', alpha=0.7)
     ax.set_ylabel('Error (m)', fontsize=12)
     ax.set_title('Statistical Metrics Comparison', fontsize=14)
     ax.set_xticks(x)
@@ -275,8 +281,10 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
 
     plt.tight_layout()
 
-    # 保存图形
-    save_path = save_dir / 'comparison_bp_vs_gnn.png'
+    # 保存图形 (使用标签生成文件名)
+    safe_label1 = label1.replace(' ', '_').replace('/', '_')
+    safe_label2 = label2.replace(' ', '_').replace('/', '_')
+    save_path = save_dir / f'comparison_{safe_label1}_vs_{safe_label2}.png'
     fig.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"\n对比图已保存: {save_path}")
 
@@ -285,15 +293,82 @@ def plot_comparison(bp_stats, gnn_stats, save_dir='results'):
 
 
 if __name__ == '__main__':
-    import sys
+    import argparse
 
-    if len(sys.argv) > 1:
-        # 单个文件分析
-        results_file = sys.argv[1]
-        stats = analyze_results(results_file)
+    parser = argparse.ArgumentParser(
+        description='分析和对比 BP-SLAM 结果文件',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用示例:
+
+1. 分析单个结果文件:
+   python analyze_results.py results/results_gnn.npz
+
+2. 对比两个结果文件 (默认 BP vs GNN):
+   python analyze_results.py --compare
+
+3. 对比自定义文件:
+   python analyze_results.py --compare --file1 results/results_bp.npz --file2 results/results_gnn.npz
+
+4. 对比不同 GNN 版本:
+   python analyze_results.py --compare --file1 results/results_gnn_v1.npz --file2 results/results_gnn_v2.npz --label1 "GNN V1" --label2 "GNN V2"
+
+5. 对比三个版本 (V1 vs V2, V2 vs V3):
+   python analyze_results.py --compare --file1 results/results_gnn_v1.npz --file2 results/results_gnn_v2.npz --label1 "V1" --label2 "V2"
+   python analyze_results.py --compare --file1 results/results_gnn_v2.npz --file2 results/results_gnn_v3.npz --label1 "V2" --label2 "V3"
+        """
+    )
+
+    parser.add_argument('file', nargs='?', default=None,
+                        help='单个结果文件路径 (用于单文件分析)')
+    parser.add_argument('--compare', action='store_true',
+                        help='对比两个结果文件')
+    parser.add_argument('--file1', type=str, default='results/results_bp.npz',
+                        help='第一个结果文件路径 (默认: results/results_bp.npz)')
+    parser.add_argument('--file2', type=str, default='results/results_gnn.npz',
+                        help='第二个结果文件路径 (默认: results/results_gnn.npz)')
+    parser.add_argument('--label1', type=str, default=None,
+                        help='第一个方法的标签 (默认: 从文件名推断)')
+    parser.add_argument('--label2', type=str, default=None,
+                        help='第二个方法的标签 (默认: 从文件名推断)')
+
+    args = parser.parse_args()
+
+    # 自动推断标签
+    def infer_label(filepath):
+        """从文件路径推断标签"""
+        filename = Path(filepath).stem  # 获取不带扩展名的文件名
+        # 移除 'results_' 前缀
+        if filename.startswith('results_'):
+            label = filename[8:]  # 去掉 'results_'
+        else:
+            label = filename
+        # 转换为大写并美化
+        label = label.upper().replace('_', ' ')
+        return label
+
+    if args.compare:
+        # 对比模式
+        label1 = args.label1 if args.label1 else infer_label(args.file1)
+        label2 = args.label2 if args.label2 else infer_label(args.file2)
+
+        stats1, stats2 = compare_results(
+            file1=args.file1,
+            file2=args.file2,
+            label1=label1,
+            label2=label2
+        )
+    elif args.file:
+        # 单文件分析模式
+        stats = analyze_results(args.file)
     else:
-        # 对比分析
-        bp_stats, gnn_stats = compare_results(
-            bp_file='results/results_bp.npz',
-            gnn_file='results/results_gnn.npz'
+        # 默认: 对比 BP vs GNN
+        print("提示: 使用 --compare 进行对比分析，或提供文件路径进行单文件分析")
+        print("运行 'python analyze_results.py --help' 查看使用说明\n")
+
+        stats1, stats2 = compare_results(
+            file1='results/results_bp.npz',
+            file2='results/results_gnn.npz',
+            label1='BP',
+            label2='GNN'
         )

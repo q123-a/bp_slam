@@ -250,7 +250,8 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
 
 def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
          gnn_load_checkpoint=None, gnn_save_checkpoint=True, gnn_inference_only=False,
-         load_measurements=None, add_synthetic_clutter=False, mismatch_mode=False):
+         load_measurements=None, add_synthetic_clutter=False, mismatch_mode=False,
+         gnn_version='v2'):
     """
     主测试函数
 
@@ -265,6 +266,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         load_measurements: str or None, 检测数据文件路径 (None表示生成新数据，否则从文件加载)
         add_synthetic_clutter: bool, 是否在加载的数据上添加合成杂波 (默认False)
         mismatch_mode: bool, 参数失配模式 (True=实际参数与BP假设不同，测试鲁棒性)
+        gnn_version: str, GNN模型版本 ('v1'=Hard Max, 'v2'=Softmax聚合, 'v3'=显式因子节点, 默认'v2')
     """
 
     # ---------------------------
@@ -385,6 +387,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     # [关键] GNN 参数配置
     # ---------------------------
     parameters['use_gnn'] = use_gnn  # 是否启用 FGNN 模式
+    parameters['gnn_version'] = gnn_version  # GNN版本: 'v1', 'v2', 'v3'
 
     if use_gnn:
         # GNN 预热步数：优先使用自定义值，否则根据总步数自适应调整
@@ -404,6 +407,11 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
 
         parameters['gnn_hidden_dim'] = 64  # 隐藏层维度
         parameters['gnn_lr'] = 1e-4  # [修正] 学习率降低到1e-4，防止过拟合
+
+        # V2/V3 特有参数
+        parameters['gnn_aggregation'] = 'softmax'  # 聚合方式: 'softmax', 'max', 'mean'
+        parameters['gnn_gamma'] = 3.0  # Softmax温度参数
+        parameters['gnn_edge_mode'] = 'concat'  # 边特征模式: 'diff', 'concat'
 
         # [改进版] 新增参数 - 针对连续凸起问题优化
         parameters['gnn_use_ema'] = True  # 使用指数移动平均
@@ -456,8 +464,19 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         parameters['gnn_checkpoint_save_path'] = 'checkpoints/gnn_model.pth'
         parameters['gnn_inference_only'] = gnn_inference_only
 
-        print(f"\n[GNN 配置 - 双头架构版本]")
+        # 版本描述
+        version_desc = {
+            'v1': 'V1 (Hard Max, 隐式因子图)',
+            'v2': 'V2 (Softmax聚合, 隐式因子图)',
+            'v3': 'V3 (显式因子节点, 两阶段消息传递)'
+        }
+
+        print(f"\n[GNN 配置 - 双头架构]")
+        print(f"  - 模型版本: {version_desc.get(gnn_version, gnn_version)}")
         print(f"  - 架构模式: {'双头 (质量头+关联头)' if parameters['gnn_use_dual_head'] else '单头'}")
+        if gnn_version in ['v2', 'v3']:
+            print(f"  - 聚合方式: {parameters['gnn_aggregation']} (gamma={parameters['gnn_gamma']})")
+            print(f"  - 边特征模式: {parameters['gnn_edge_mode']}")
         print(f"  - 预热步数: {parameters['gnn_warmup_steps']} ({warmup_source})")
         print(f"  - 隐藏维度: {parameters['gnn_hidden_dim']}")
         print(f"  - 学习率: {parameters['gnn_lr']}")
@@ -522,7 +541,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     print(f"\n开始运行BP-SLAM算法 ({mode_str} 模式)...\n")
     print("=" * 60)
     (estimated_trajectory, estimated_anchors,
-     posterior_particles_anchors, num_estimated_anchors) = bp_based_mint_slam(
+     posterior_particles_anchors, num_estimated_anchors, loss_history) = bp_based_mint_slam(
         data_va, cluttered_measurements, parameters, true_trajectory
     )
 
@@ -605,6 +624,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
              max_error=max_error,
              final_error=final_error,
              ospa_errors=ospa_errors,
+             loss_history=loss_history,
              allow_pickle=True)
 
     print(f"完成！结果已保存到 results/{result_filename}")
@@ -658,6 +678,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='BP-SLAM 测试脚本（支持自定义步数和粒子数）')
     parser.add_argument('--mode', type=str, default='bp', choices=['bp', 'gnn'],
                         help='运行模式: bp (纯BP) 或 gnn (BP+GNN), 默认: bp')
+    parser.add_argument('--gnn-version', type=str, default='v2', choices=['v1', 'v2', 'v3'],
+                        help='GNN模型版本: v1 (Hard Max), v2 (Softmax聚合), v3 (显式因子节点), 默认: v2')
     parser.add_argument('--steps', type=int, default=900,
                         help='运行步数, 默认: 900')
     parser.add_argument('--particles', type=int, default=100000,
@@ -691,5 +713,6 @@ if __name__ == '__main__':
         gnn_inference_only=args.inference_only,
         load_measurements=args.load_measurements,
         add_synthetic_clutter=args.add_clutter,
-        mismatch_mode=args.mismatch_mode
+        mismatch_mode=args.mismatch_mode,
+        gnn_version=args.gnn_version
     )
