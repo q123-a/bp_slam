@@ -130,7 +130,7 @@ class GNNTrainerImproved:
         """在新的序列开始时调用，清空 GRU 记忆"""
         self.hidden_state = None
 
-    def step(self, hybrid_tensor, measurements, predicted_measurements, predicted_variances, num_iterations=5):
+    def step(self, hybrid_tensor, measurements, predicted_measurements, predicted_variances, num_iterations=5, sensor_id=0):
         """
         执行一步训练/推理（支持多次迭代）
 
@@ -140,6 +140,7 @@ class GNNTrainerImproved:
             predicted_measurements: (K,) 预测测量
             predicted_variances: (K,) 预测方差
             num_iterations: int, 每个时间步的迭代次数 (默认5次)
+            sensor_id: int, 传感器ID（V1不使用，仅为接口兼容）
 
         返回:
             legacy_probs: (M, K) 锚点关联概率
@@ -620,7 +621,7 @@ class JointDualHeadTrainer:
         """
         self.hidden_state = None
     
-    def step(self, hybrid_tensor, measurements, predicted_measurements, predicted_variances):
+    def step(self, hybrid_tensor, measurements, predicted_measurements, predicted_variances, sensor_id=0):
         """
         执行一步训练/推理
 
@@ -631,6 +632,7 @@ class JointDualHeadTrainer:
 
         输入:
             hybrid_tensor: (1, M, K+1, 5) 混合特征
+            sensor_id: int, 传感器ID（V1不使用，仅为接口兼容）
             measurements: (3, M) 测量数据 [距离, 方差, 幅度]
             predicted_measurements: (K,) 预测距离
             predicted_variances: (K,) 预测方差
@@ -710,7 +712,10 @@ class JointDualHeadTrainer:
             # 这样SLAM端可以直接使用: message = assoc_probs * (1 - dustbin)
             dustbin_probs = 1.0 - quality
 
-        return assoc_probs, dustbin_probs, loss.item()
+            # No variance inflation - return ones (no scaling)
+            final_scale = np.ones(len(dustbin_probs))
+
+        return assoc_probs, dustbin_probs, final_scale, loss.item()
     
     def _compute_joint_loss(self, assoc_logits, quality_scores, measurements, 
                            predicted_measurements, predicted_variances):

@@ -204,7 +204,7 @@ class JointDualHeadTrainerV2:
         """
         self.hidden_state = None
 
-    def step(self, hybrid_tensor, measurements, predicted_measurements, predicted_variances, num_iterations=1):
+    def step(self, hybrid_tensor, measurements, predicted_measurements, predicted_variances, num_iterations=1, sensor_id=0):
         """
         执行一步训练/推理
 
@@ -217,6 +217,7 @@ class JointDualHeadTrainerV2:
         输入:
             hybrid_tensor: (1, M, K+1, 5) 混合特征
             measurements: (3, M) 测量数据 [距离, 方差, 幅度]
+            sensor_id: int, 传感器ID（V2不使用，仅为接口兼容）
             predicted_measurements: (K,) 预测距离
             predicted_variances: (K,) 预测方差
             num_iterations: 每个时间步的迭代次数（默认1次）
@@ -317,7 +318,10 @@ class JointDualHeadTrainerV2:
             # 杂波概率 (Dustbin) = 1.0 - Quality
             dustbin_probs = 1.0 - quality
 
-        return assoc_probs, dustbin_probs, avg_loss
+            # No variance inflation - return ones (no scaling)
+            final_scale = np.ones(len(dustbin_probs))
+
+        return assoc_probs, dustbin_probs, final_scale, avg_loss
 
     def _compute_joint_loss(self, assoc_logits, quality_scores, measurements,
                            predicted_measurements, predicted_variances):
