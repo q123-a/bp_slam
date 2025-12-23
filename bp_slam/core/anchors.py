@@ -249,6 +249,7 @@ def delete_unreliable_va(estimated_anchors, posterior_particles_anchors,
     返回:
         estimated_anchors: 删除不可靠锚点后的估计
         posterior_particles_anchors: 删除不可靠锚点后的粒子集合
+        reliable_indices: 保留的锚点索引列表（用于同步其他数据结构）
     """
     # 找出存在概率高于阈值的锚点索引
     reliable_indices = []
@@ -260,4 +261,4 @@ def delete_unreliable_va(estimated_anchors, posterior_particles_anchors,
     estimated_anchors = [estimated_anchors[i] for i in reliable_indices]
     posterior_particles_anchors = [posterior_particles_anchors[i] for i in reliable_indices]
 
-    return estimated_anchors, posterior_particles_anchors
+    return estimated_anchors, posterior_particles_anchors, reliable_indices

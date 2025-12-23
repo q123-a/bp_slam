@@ -1,1 +1,9 @@
 results/
+logs/
+data_set/
+checkpoints/
+zb/
+training_data_test_v2/
+training_data_test/
+training_data/
+results_old/

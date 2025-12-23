@@ -3,16 +3,89 @@ BP-SLAM 主测试脚本
 Main test script for BP-SLAM algorithm
 
 Converted from MATLAB testbed.m
+
+Usage:
+    python testbed.py                    # 默认 BP 模式
+    python testbed.py --mode bp          # 纯 BP 模式
+    python testbed.py --mode gnn         # GNN 推理模式
+    python testbed.py --mode gnn --steps 100  # GNN 模式，运行100步
 """
 
+import argparse
 import numpy as np
 import scipy.io as sio
+import torch
 from bp_slam.utils.measurements import generate_measurements, generate_cluttered_measurements
 from bp_slam.core.slam import bp_based_mint_slam
 
 
+def load_gnn_model(checkpoint_path, device='cuda'):
+    """加载训练好的 GNN 模型"""
+    from bp_slam.models.edge_gat import EdgeConditionedBipartiteGAT
+    
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    
+    # 获取模型参数
+    args = checkpoint.get('args', {})
+    hidden_dim = args.get('hidden_dim', 64)
+    num_layers = args.get('num_layers', 2)
+    num_heads = args.get('num_heads', 4)
+    
+    # 创建模型
+    model = EdgeConditionedBipartiteGAT(
+        meas_input_dim=2,
+        anchor_input_dim=3,
+        edge_input_dim=1,
+        hidden_dim=hidden_dim,
+        num_layers=num_layers,
+        num_heads=num_heads
+    ).to(device)
+    
+    # 加载权重
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+    
+    print(f"已加载 GNN 模型: {checkpoint_path}")
+    print(f"  Epoch: {checkpoint.get('epoch', 'N/A')}")
+    print(f"  Val Loss: {checkpoint.get('val_loss', 'N/A'):.4f}")
+    
+    return model
+
+
+def parse_args():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(description='BP-SLAM 测试脚本')
+    parser.add_argument('--mode', type=str, default='bp', choices=['bp', 'gnn'],
+                        help='数据关联模式: bp (Belief Propagation) 或 gnn (Graph Neural Network)')
+    parser.add_argument('--steps', type=int, default=900,
+                        help='运行的时间步数 (默认: 900)')
+    parser.add_argument('--particles', type=int, default=100000,
+                        help='粒子数量 (默认: 100000)')
+    parser.add_argument('--seed', type=int, default=1,
+                        help='随机种子 (默认: 1)')
+    parser.add_argument('--model', type=str, default='checkpoints/best_model.pt',
+                        help='GNN 模型路径 (默认: checkpoints/best_model.pt)')
+    parser.add_argument('--dataset', type=str, default='scenarioCleanM2_new.mat',
+                        help='数据集文件 (默认: scenarioCleanM2_new.mat)')
+    parser.add_argument('--no-viz', action='store_true',
+                        help='禁用可视化')
+    return parser.parse_args()
+
+
 def main():
     """主测试函数"""
+    args = parse_args()
+    
+    print(f"\n{'='*60}")
+    print(f"BP-SLAM 测试")
+    print(f"{'='*60}")
+    print(f"模式: {args.mode.upper()}")
+    print(f"时间步: {args.steps}")
+    print(f"粒子数: {args.particles}")
+    print(f"数据集: {args.dataset}")
+    if args.mode == 'gnn':
+        print(f"GNN 模型: {args.model}")
+    print(f"{'='*60}\n")
 
     # ---------------------------
     # 1. 通用参数及数据加载
@@ -21,7 +94,7 @@ def main():
     parameters['known_track'] = 0  # 是否已知轨迹（0表示未知轨迹）
 
     # 加载场景数据，包括虚拟锚点 dataVA 和真实轨迹 trueTrajectory
-    mat_data = sio.loadmat('scenarioCleanM2_new.mat')
+    mat_data = sio.loadmat(args.dataset)
     data_va_raw = mat_data['dataVA'][:, 0]  # 修复：获取所有传感器数据
     true_trajectory = mat_data['trueTrajectory']
 
@@ -40,7 +113,7 @@ def main():
     # ---------------------------
     # 2. 算法参数配置
     # ---------------------------
-    parameters['maxSteps'] = 900  # 最大时间步数
+    parameters['maxSteps'] = args.steps  # 最大时间步数
     true_trajectory = true_trajectory[:, :parameters['maxSteps']]  # 取前maxSteps个时间步的轨迹
     parameters['lengthStep'] = 0.03  # 单步移动距离（米）
     parameters['scanTime'] = 1  # 采样时间间隔（秒）
@@ -73,7 +146,7 @@ def main():
                                                (2 * parameters['regionOfInterestSize'])**2)
 
     # 粒子滤波相关参数
-    parameters['numParticles'] = 100000  # 粒子数量
+    parameters['numParticles'] = args.particles  # 粒子数量
     parameters['upSamplingFactor'] = 1  # 粒子上采样因子
 
     # SLAM相关阈值与先验
@@ -91,7 +164,7 @@ def main():
     # ---------------------------
     # 3. 随机种子设置（保证结果可重复）
     # ---------------------------
-    np.random.seed(1)
+    np.random.seed(args.seed)
 
     # ---------------------------
     # 4. 移动体初始位置均值设定（真实轨迹起点）
@@ -113,11 +186,25 @@ def main():
     # ---------------------------
     # 7. 调用核心BP-SLAM算法进行估计
     # ---------------------------
-    print("\n开始运行BP-SLAM算法...\n")
+    print(f"\n开始运行 SLAM 算法 (模式: {args.mode.upper()})...\n")
     print("=" * 50)
+    
+    # 根据模式加载 GNN 模型
+    gnn_model = None
+    if args.mode == 'gnn':
+        import os
+        if not os.path.exists(args.model):
+            print(f"错误: GNN 模型不存在: {args.model}")
+            print("请先训练模型: python train_gat_v2.py")
+            return None, None, None
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        gnn_model = load_gnn_model(args.model, device)
+    
     (estimated_trajectory, estimated_anchors,
      posterior_particles_anchors, num_estimated_anchors) = bp_based_mint_slam(
-        data_va, cluttered_measurements, parameters, true_trajectory
+        data_va, cluttered_measurements, parameters, true_trajectory,
+        association_mode=args.mode,
+        gnn_model=gnn_model
     )
 
     print("\n" + "=" * 50)
@@ -134,14 +221,17 @@ def main():
     results_dir = Path('results')
     results_dir.mkdir(exist_ok=True)
 
-    print("\n保存结果到 results/results.npz...")
-    np.savez(results_dir / 'results.npz',
+    # 根据模式命名结果文件
+    result_filename = f'results_{args.mode}.npz'
+    print(f"\n保存结果到 results/{result_filename}...")
+    np.savez(results_dir / result_filename,
              estimated_trajectory=estimated_trajectory,
              true_trajectory=true_trajectory,
              num_estimated_anchors=num_estimated_anchors,
              estimated_anchors=np.array(estimated_anchors, dtype=object),
              posterior_particles_anchors=np.array(posterior_particles_anchors, dtype=object),
              parameters=parameters,
+             mode=args.mode,
              allow_pickle=True)
 
     print("完成！结果已保存到 results/ 文件夹。")
@@ -149,25 +239,41 @@ def main():
     # ---------------------------
     # 9. 统一可视化模块（3个图表）
     # ---------------------------
-    print("\n生成可视化图表...")
-    from bp_slam.visualization.visualizer import visualize_online
+    if not args.no_viz:
+        print("\n生成可视化图表...")
+        from bp_slam.visualization.visualizer import visualize_online
 
-    # 获取最后一个时间步的锚点粒子（如果有）
-    last_particles = posterior_particles_anchors[-1] if len(posterior_particles_anchors) > 0 and posterior_particles_anchors[-1] is not None else None
+        # 获取最后一个时间步的锚点粒子（如果有）
+        last_particles = posterior_particles_anchors[-1] if len(posterior_particles_anchors) > 0 and posterior_particles_anchors[-1] is not None else None
 
-    # 调用统一可视化模块
-    stats = visualize_online(
-        true_trajectory, estimated_trajectory, estimated_anchors,
-        last_particles, data_va, parameters,
-        scene_file='scen_semroom_new.mat',
-        output_dir='results',
-        save=True,
-        show=True
-    )
+        # 调用统一可视化模块
+        stats = visualize_online(
+            true_trajectory, estimated_trajectory, estimated_anchors,
+            last_particles, data_va, parameters,
+            scene_file='scen_semroom_new.mat',
+            output_dir='results',
+            save=True,
+            show=True
+        )
 
-    print("\n提示：关闭图表窗口以继续...")
-    import matplotlib.pyplot as plt
-    plt.show()
+        print("\n提示：关闭图表窗口以继续...")
+        import matplotlib.pyplot as plt
+        plt.show()
+    else:
+        print("\n可视化已禁用 (--no-viz)")
+
+    # 打印最终统计
+    from bp_slam.utils.distance import calc_distance
+    errors = calc_distance(true_trajectory[0:2, :], estimated_trajectory[0:2, :])
+    print(f"\n{'='*60}")
+    print(f"最终结果统计 (模式: {args.mode.upper()})")
+    print(f"{'='*60}")
+    print(f"平均位置误差: {np.mean(errors):.4f} m")
+    print(f"最大位置误差: {np.max(errors):.4f} m")
+    print(f"最终锚点数 - 传感器1: {num_estimated_anchors[0, -1]}")
+    if num_sensors > 1:
+        print(f"最终锚点数 - 传感器2: {num_estimated_anchors[1, -1]}")
+    print(f"{'='*60}")
 
     return estimated_trajectory, estimated_anchors, num_estimated_anchors
 

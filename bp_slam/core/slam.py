@@ -1,14 +1,16 @@
 """
-基于信念传播的多路径SLAM算法核心函数
 BP-based Multipath-assisted SLAM core algorithm
+Supports multiple data association modes: BP, Ground Truth, GNN
 
 Author: Florian Meyer, Erik Leitinger, 20/05/17
 Converted to Python: 2025
+Extended with multi-mode support: 2025
 """
 
 import numpy as np
 import time
 import copy
+import torch
 from ..utils.sampling import draw_samples_uniformly_circ, resample_systematic
 from ..utils.motion_model import perform_prediction
 from ..utils.distance import calc_distance
@@ -17,22 +19,187 @@ from .anchors import (init_anchors, predict_anchors, predict_measurements,
 from .association import calculate_association_probabilities_ga
 
 
-def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_trajectory):
+def _create_training_sample(
+    measurements,           # (2, M) current measurements [distance, variance]
+    labels,                 # (M,) ground truth labels (truth_anchor_id or -1 for clutter)
+    predicted_measurements, # (N,) predicted distances for existing anchors
+    predicted_uncertainties,# (N,) predicted variances
+    anchor_existence,       # (N,) anchor existence probabilities
+    existing_truth_ids,     # list: truth IDs of existing anchors in SLAM state
+    step,                   # int: time step
+    sensor                  # int: sensor index
+):
     """
-    基于信念传播的多路径SLAM算法核心函数
-
-    参数:
-        data_va: 虚拟锚点数据列表
-        cluttered_measurements: 带误报的测量数据（距离+方差），列表[num_steps][num_sensors]
-        parameters: 算法参数字典
-        true_trajectory: 真实轨迹，用于误差计算（已知轨迹模式），shape (n_dims, num_steps)
-
-    返回:
-        estimated_trajectory: 估计的移动体状态轨迹（位置+速度），shape (4, num_steps)
-        estimated_anchors: 估计的锚点位置和存在概率
-        posterior_particles_anchors_storage: 存储部分时刻锚点粒子用于分析
-        num_estimated_anchors: 每时刻估计的锚点数量，shape (num_sensors, num_steps)
+    Convert SLAM intermediate data to GNN training sample.
+    
+    Key logic for labels:
+        - Clutter (label=-1): y_new=0, y_match=all zeros (it's garbage, not new anchor!)
+        - Existing anchor: y_new=0, y_match[matched_idx]=1
+        - True new anchor: y_new=1, y_match=all zeros (it's in truth but not in SLAM state yet)
+    
+    Returns:
+        sample: dict with GNN inputs and labels, or None if no measurements
     """
+    if measurements is None or measurements.size == 0:
+        return None
+    
+    M = measurements.shape[1]  # number of measurements
+    N = len(predicted_measurements)  # number of existing anchors in SLAM state
+    
+    # Ensure N matches existing_truth_ids length
+    actual_N = len(existing_truth_ids)
+    if N != actual_N:
+        # Use actual_N as the true anchor count
+        N = actual_N
+    
+    # ================================================================
+    # Build measurement node features x_meas: (M, 2)
+    # ================================================================
+    x_meas = np.zeros((M, 2), dtype=np.float32)
+    x_meas[:, 0] = measurements[0, :]  # distance
+    x_meas[:, 1] = measurements[1, :]  # variance
+    
+    # ================================================================
+    # Build anchor node features x_anchor: (N, 3)
+    # If N=0 (no anchors yet), we still need to create the sample
+    # ================================================================
+    if N > 0:
+        x_anchor = np.zeros((N, 3), dtype=np.float32)
+        x_anchor[:, 0] = predicted_measurements[:N]
+        x_anchor[:, 1] = predicted_uncertainties[:N]
+        x_anchor[:, 2] = anchor_existence[:N]
+    else:
+        # No anchors yet - create dummy anchor node for graph structure
+        x_anchor = np.zeros((1, 3), dtype=np.float32)
+        x_anchor[0, :] = [0.0, 1.0, 0.0]  # dummy: dist=0, var=1, exist=0
+        N = 1  # for edge index calculation
+    
+    # ================================================================
+    # Build bipartite graph edge indices edge_index: (2, M*N)
+    # ================================================================
+    meas_indices = np.repeat(np.arange(M), N)
+    anchor_indices = np.tile(np.arange(N), M)
+    edge_index = np.stack([meas_indices, anchor_indices], axis=0)
+    
+    # ================================================================
+    # Build edge features edge_attr: (M*N, 1)
+    # ================================================================
+    z = measurements[0, :]
+    z_hat = x_anchor[:, 0]  # Use x_anchor's predicted distance
+    residuals = np.abs(z[:, np.newaxis] - z_hat[np.newaxis, :])
+    edge_attr = residuals.flatten()[:, np.newaxis]
+    
+    # ================================================================
+    # Build labels with CORRECT logic
+    # ================================================================
+    # Create truth_id to index mapping for existing anchors
+    id_to_index = {tid: idx for idx, tid in enumerate(existing_truth_ids)}
+    
+    # y_match: (M, N) binary matrix for matching
+    # y_new: (M,) binary vector for new anchor detection
+    y_match = np.zeros((M, N), dtype=np.float32)
+    y_new = np.zeros(M, dtype=np.float32)
+    match_labels = np.zeros(M, dtype=np.int64)  # for CrossEntropy backup
+    
+    new_anchor_ids = []  # IDs of true new anchors discovered this frame
+    
+    for i, truth_id in enumerate(labels if labels is not None else []):
+        if truth_id == -1:
+            # ====== CLUTTER ======
+            match_labels[i] = actual_N  # "no match" category
+            y_new[i] = 0.0  # CRITICAL: clutter is NOT new anchor
+            
+        elif truth_id in id_to_index:
+            # ====== EXISTING ANCHOR ======
+            idx = id_to_index[truth_id]
+            if idx < N:  # Ensure index is valid
+                y_match[i, idx] = 1.0
+                match_labels[i] = idx
+            y_new[i] = 0.0
+            
+        else:
+            # ====== TRUE NEW ANCHOR ======
+            match_labels[i] = actual_N  # "no match" category
+            y_new[i] = 1.0  # TRUE new anchor!
+            new_anchor_ids.append(truth_id)
+    
+    # ================================================================
+    # Assemble sample - all dimensions should now be consistent
+    # ================================================================
+    sample = {
+        'x_meas': torch.from_numpy(x_meas),
+        'x_anchor': torch.from_numpy(x_anchor),
+        'edge_index': torch.from_numpy(edge_index.astype(np.int64)),
+        'edge_attr': torch.from_numpy(edge_attr.astype(np.float32)),
+        # Labels
+        'y_match': torch.from_numpy(y_match),
+        'y_new': torch.from_numpy(y_new),
+        'match_labels': torch.from_numpy(match_labels),
+        # Metadata
+        'metadata': {
+            'step': step,
+            'sensor': sensor,
+            'num_measurements': M,
+            'num_anchors': N if actual_N > 0 else 0,
+            'existing_truth_ids': list(existing_truth_ids),
+            'new_anchor_ids': new_anchor_ids
+        }
+    }
+    
+    return sample
+
+
+def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_trajectory,
+                       association_mode='bp', ground_truth_labels=None, 
+                       gnn_model=None, collect_training_data=False):
+    """
+    Multi-mode SLAM algorithm supporting BP, Ground Truth, and GNN data association.
+
+    Args:
+        data_va: Virtual anchor data list
+        cluttered_measurements: Measurements with clutter [num_steps][num_sensors]
+        parameters: Algorithm parameters dictionary
+        true_trajectory: True trajectory for error calculation, shape (2, num_steps)
+        
+        association_mode: Data association method
+            - 'bp': Belief Propagation (default, for inference)
+            - 'ground_truth': Use ground truth labels (for training data collection)
+            - 'gnn': Use trained GNN model (for inference after training)
+        
+        ground_truth_labels: Required when association_mode='ground_truth'
+            - Format: [step][sensor] = (M,) array of truth_anchor_ids (-1 for clutter)
+        
+        gnn_model: Required when association_mode='gnn'
+            - Trained EdgeConditionedBipartiteGAT model
+        
+        collect_training_data: If True, collect and return GNN training samples
+
+    Returns:
+        estimated_trajectory: Estimated agent trajectory, shape (4, num_steps)
+        estimated_anchors: Estimated anchor positions and existence probabilities
+        posterior_particles_anchors_storage: Stored anchor particles for analysis
+        num_estimated_anchors: Number of anchors per sensor per step
+        
+        If collect_training_data=True, also returns:
+        training_samples: List of GNN training samples
+    """
+    # Validate parameters
+    if association_mode == 'ground_truth' and ground_truth_labels is None:
+        raise ValueError("ground_truth_labels required when association_mode='ground_truth'")
+    if association_mode == 'gnn' and gnn_model is None:
+        raise ValueError("gnn_model required when association_mode='gnn'")
+    
+    print(f"SLAM running with association_mode='{association_mode}'")
+    if collect_training_data:
+        print("Training data collection ENABLED")
+    
+    # Training data storage
+    training_samples = [] if collect_training_data else None
+    
+    # For ground_truth mode: track discovered anchor truth_ids per sensor
+    if association_mode == 'ground_truth':
+        discovered_truth_ids = [[] for _ in range(len(cluttered_measurements[0]))]
+    
     # 获取测量时间步数和传感器数量
     num_steps = len(cluttered_measurements)
     num_sensors = len(cluttered_measurements[0])
@@ -137,19 +304,143 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                 predicted_particles_agent, predicted_particles_anchors, weights_anchor
             )
 
-            # 计算测量与锚点的数据关联概率
-            (association_probabilities, association_probabilities_new,
-             message_lhf_ratios, messages_new) = calculate_association_probabilities_ga(
-                measurements, predicted_measurements, predicted_uncertainties,
-                weights_anchor, new_input_bp, parameters
-            )
-
-            # 对每个锚点计算粒子权重，结合检测概率和测量似然
-            num_anchors = predicted_particles_anchors.shape[2]
-            weights = np.zeros((num_particles, num_anchors))
+            # ================================================================
+            # DATA ASSOCIATION - Multi-mode support
+            # ================================================================
+            num_anchors = predicted_particles_anchors.shape[2] if predicted_particles_anchors.size > 0 else 0
+            
+            if association_mode == 'bp':
+                # Original BP-based data association
+                (association_probabilities, association_probabilities_new,
+                 message_lhf_ratios, messages_new) = calculate_association_probabilities_ga(
+                    measurements, predicted_measurements, predicted_uncertainties,
+                    weights_anchor, new_input_bp, parameters
+                )
+                
+            elif association_mode == 'ground_truth':
+                # Ground truth association (cheat mode for training data collection)
+                labels = ground_truth_labels[step][sensor]
+                
+                # Build mapping from truth_id to anchor index
+                id_to_idx = {tid: idx for idx, tid in enumerate(discovered_truth_ids[sensor])}
+                
+                # Initialize outputs
+                if num_measurements > 0 and num_anchors > 0:
+                    message_lhf_ratios = np.zeros((num_measurements, num_anchors))
+                    for i, truth_id in enumerate(labels):
+                        if truth_id >= 0 and truth_id in id_to_idx:
+                            # Match to existing anchor
+                            idx = id_to_idx[truth_id]
+                            message_lhf_ratios[i, idx] = 1.0
+                else:
+                    message_lhf_ratios = np.zeros((max(num_measurements, 1), max(num_anchors, 1)))
+                
+                # For new anchors: discover new truth_ids
+                messages_new = np.zeros(num_measurements) if num_measurements > 0 else np.array([])
+                new_anchor_truth_ids = []
+                for i, truth_id in enumerate(labels):
+                    if truth_id >= 0 and truth_id not in id_to_idx:
+                        # This is a NEW anchor - high message
+                        messages_new[i] = 10.0  # High value to create new anchor
+                        new_anchor_truth_ids.append(truth_id)
+                    elif truth_id == -1:
+                        # Clutter - low message (don't create new anchor)
+                        messages_new[i] = 0.01
+                
+                association_probabilities = message_lhf_ratios
+                association_probabilities_new = messages_new
+                
+            elif association_mode == 'gnn':
+                # ================================================================
+                # GNN-based data association
+                # ================================================================
+                if num_measurements == 0:
+                    message_lhf_ratios = np.zeros((1, max(num_anchors, 1)))
+                    messages_new = np.array([])
+                else:
+                    # Prepare input tensors
+                    device = next(gnn_model.parameters()).device
+                    
+                    # Measurement features: (M, 2) [distance, variance]
+                    x_meas = torch.zeros((num_measurements, 2), dtype=torch.float32, device=device)
+                    x_meas[:, 0] = torch.from_numpy(measurements[0, :])
+                    x_meas[:, 1] = torch.from_numpy(measurements[1, :])
+                    
+                    # Anchor features: (N, 3) [predicted_dist, variance, existence]
+                    if num_anchors > 0:
+                        x_anchor = torch.zeros((num_anchors, 3), dtype=torch.float32, device=device)
+                        x_anchor[:, 0] = torch.from_numpy(predicted_measurements)
+                        x_anchor[:, 1] = torch.from_numpy(predicted_uncertainties)
+                        anchor_exist = np.array([posterior_particles_anchors[sensor][a]['posteriorExistence'] 
+                                                  for a in range(num_anchors)])
+                        x_anchor[:, 2] = torch.from_numpy(anchor_exist)
+                        N = num_anchors
+                    else:
+                        # Dummy anchor for graph structure
+                        x_anchor = torch.zeros((1, 3), dtype=torch.float32, device=device)
+                        x_anchor[0, :] = torch.tensor([0.0, 1.0, 0.0])
+                        N = 1
+                    
+                    M = num_measurements
+                    
+                    # Build edge index: (2, M*N)
+                    meas_idx = torch.arange(M, device=device).repeat_interleave(N)
+                    anchor_idx = torch.arange(N, device=device).repeat(M)
+                    edge_index = torch.stack([meas_idx, anchor_idx], dim=0)
+                    
+                    # Edge features: |z - z_hat|
+                    z = x_meas[:, 0]  # (M,)
+                    z_hat = x_anchor[:, 0]  # (N,)
+                    residuals = torch.abs(z[:, None] - z_hat[None, :])  # (M, N)
+                    edge_attr = residuals.flatten()[:, None]  # (M*N, 1)
+                    
+                    # Forward pass (use sigmoid for independent probabilities)
+                    gnn_model.eval()
+                    with torch.no_grad():
+                        match_probs, new_anchor_probs, _ = gnn_model(x_meas, x_anchor, edge_attr, edge_index, use_sigmoid=True)
+                    
+                    # Convert to numpy
+                    match_probs_np = match_probs.cpu().numpy()  # (M, N)
+                    new_probs_np = new_anchor_probs.cpu().numpy()  # (M,)
+                    
+                    # Use match probabilities as message ratios
+                    if num_anchors > 0:
+                        message_lhf_ratios = match_probs_np
+                    else:
+                        message_lhf_ratios = np.zeros((num_measurements, 1))
+                    
+                    # Use new anchor probabilities as messages_new
+                    # Scale to match BP message range
+                    messages_new = new_probs_np * 10.0  # Scale up for anchor generation
+                
+                association_probabilities = message_lhf_ratios
+                association_probabilities_new = messages_new
+            
+            # ================================================================
+            # Collect training data if enabled
+            # ================================================================
+            if collect_training_data and num_measurements > 0:
+                sample = _create_training_sample(
+                    measurements=measurements,
+                    labels=ground_truth_labels[step][sensor] if ground_truth_labels else None,
+                    predicted_measurements=predicted_measurements,
+                    predicted_uncertainties=predicted_uncertainties,
+                    anchor_existence=np.array([posterior_particles_anchors[sensor][a]['posteriorExistence'] 
+                                               for a in range(num_anchors)]) if num_anchors > 0 else np.array([]),
+                    existing_truth_ids=discovered_truth_ids[sensor] if association_mode == 'ground_truth' else [],
+                    step=step,
+                    sensor=sensor
+                )
+                if sample is not None:
+                    training_samples.append(sample)
+            
+            # ================================================================
+            # Particle weight update
+            # ================================================================
+            weights = np.zeros((num_particles, num_anchors)) if num_anchors > 0 else np.zeros((num_particles, 1))
 
             # 向量化优化：一次性计算所有锚点和测量的权重
-            if num_measurements > 0:
+            if num_measurements > 0 and num_anchors > 0:
                 # 初始化权重为未检测概率
                 weights[:, :] = (1 - detection_probability)
 
@@ -173,7 +464,7 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                 # 对测量维度求和，得到每个锚点的总权重
                 weights += np.sum(weight_contributions, axis=2)
             else:
-                # 没有测量时，所有权重为未检测概率
+                # 没有测量或没有锚点时，所有权重为未检测概率
                 weights[:, :] = (1 - detection_probability)
 
             # 对每个锚点进行后续处理（这部分仍需循环，因为涉及重采样等操作）
@@ -252,6 +543,15 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                         'posteriorExistence': posterior_existence,
                         'generatedAt': step
                     })
+                    
+                    # Ground truth mode: track discovered truth IDs
+                    if association_mode == 'ground_truth':
+                        labels = ground_truth_labels[step][sensor]
+                        if measurement < len(labels):
+                            truth_id = labels[measurement]
+                            if truth_id >= 0 and truth_id not in discovered_truth_ids[sensor]:
+                                discovered_truth_ids[sensor].append(truth_id)
+                                
                 else:
                     posterior_particles_anchors[sensor][new_anchor_idx]['posteriorExistence'] = posterior_existence
                     posterior_particles_anchors[sensor][new_anchor_idx]['x'] = new_particles_anchors[measurement]['x']
@@ -263,10 +563,16 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     estimated_anchors[sensor][step][new_anchor_idx]['generatedAt'] = step
 
             # 删除存在概率低于阈值的不可靠锚点，控制复杂度
-            estimated_anchors[sensor][step], posterior_particles_anchors[sensor] = delete_unreliable_va(
+            estimated_anchors[sensor][step], posterior_particles_anchors[sensor], reliable_indices = delete_unreliable_va(
                 estimated_anchors[sensor][step], posterior_particles_anchors[sensor],
                 unreliability_threshold
             )
+            
+            # Ground truth mode: sync discovered_truth_ids with anchor deletion
+            if association_mode == 'ground_truth' and len(reliable_indices) < len(discovered_truth_ids[sensor]):
+                discovered_truth_ids[sensor] = [discovered_truth_ids[sensor][i] for i in reliable_indices 
+                                                 if i < len(discovered_truth_ids[sensor])]
+            
             num_estimated_anchors[sensor, step] = len(estimated_anchors[sensor][step])
 
         # 汇总所有传感器权重，归一化移动体粒子权重
@@ -313,4 +619,10 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
         print(f'Execution Time: {exec_time_per_step[step]:.4f}')
         print('---------------------------------------------------\n')
 
-    return estimated_trajectory, estimated_anchors, posterior_particles_anchors_storage, num_estimated_anchors
+    # Return results
+    results = (estimated_trajectory, estimated_anchors, posterior_particles_anchors_storage, num_estimated_anchors)
+    
+    if collect_training_data:
+        return results + (training_samples,)
+    else:
+        return results
