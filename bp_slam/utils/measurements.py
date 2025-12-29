@@ -57,7 +57,7 @@ def generate_measurements(target_trajectory, data_va, parameters):
     return measurements_cell
 
 
-def generate_cluttered_measurements(true_measurements_cell, parameters):
+def generate_cluttered_measurements(true_measurements_cell, parameters, return_labels=False):
     """
     生成带有杂波和漏检的测量数据（仿真环境）
 
@@ -65,9 +65,12 @@ def generate_cluttered_measurements(true_measurements_cell, parameters):
         true_measurements_cell: 真实测量数据，shape (num_steps, num_sensors)的列表
                                每个元素是 (2, num_anchors) 的数组（距离+方差）
         parameters: 参数字典，包括测量方差、检测概率、杂波均值、区域大小等
+        return_labels: bool, 是否返回监督学习标签（用于训练）
 
     返回:
         cluttered_measurements: 加入误报和漏检后的测量数据，shape同输入
+        labels (可选): 如果 return_labels=True，返回标签字典
+                      包含 'true_id' 和 'is_clutter'
     """
     # 读取参数
     measurement_variance_range = parameters['measurementVariance']
@@ -81,6 +84,10 @@ def generate_cluttered_measurements(true_measurements_cell, parameters):
     # 初始化输出
     cluttered_measurements = [[None for _ in range(num_sensors)] for _ in range(num_steps)]
 
+    # 如果需要返回标签，初始化标签存储
+    if return_labels:
+        labels = [[None for _ in range(num_sensors)] for _ in range(num_steps)]
+
     # 遍历每个传感器和时间步
     for sensor in range(num_sensors):
         for step in range(num_steps):
@@ -89,6 +96,7 @@ def generate_cluttered_measurements(true_measurements_cell, parameters):
             if true_measurements is None or true_measurements.size == 0:
                 num_anchors = 0
                 detected_measurements = np.zeros((2, 0))
+                detected_anchor_ids = np.array([], dtype=int)
             else:
                 num_anchors = true_measurements.shape[1]
 
@@ -97,6 +105,9 @@ def generate_cluttered_measurements(true_measurements_cell, parameters):
 
                 # 提取被检测到的测量
                 detected_measurements = true_measurements[:, detection_indicator]
+
+                # 记录被检测到的锚点ID（0, 1, 2, ...）
+                detected_anchor_ids = np.where(detection_indicator)[0]
 
             # 生成误报（杂波）数量，符合泊松分布
             num_false_alarms = np.random.poisson(mean_number_of_clutter)
@@ -109,6 +120,20 @@ def generate_cluttered_measurements(true_measurements_cell, parameters):
                 # 误报测量方差为测距方差
                 false_alarms[1, :] = measurement_variance_range
 
+            # 生成标签（在打乱之前）
+            if return_labels:
+                # 杂波的 true_id = -1, is_clutter = True
+                clutter_true_ids = np.full(num_false_alarms, -1, dtype=int)
+                clutter_is_clutter = np.ones(num_false_alarms, dtype=bool)
+
+                # 真实测量的 true_id = 锚点ID, is_clutter = False
+                detected_true_ids = detected_anchor_ids
+                detected_is_clutter = np.zeros(len(detected_anchor_ids), dtype=bool)
+
+                # 拼接标签
+                true_ids = np.concatenate([clutter_true_ids, detected_true_ids])
+                is_clutter = np.concatenate([clutter_is_clutter, detected_is_clutter])
+
             # 将误报和真实检测测量拼接
             if detected_measurements.size > 0:
                 cluttered_measurement = np.hstack([false_alarms, detected_measurements])
@@ -120,10 +145,25 @@ def generate_cluttered_measurements(true_measurements_cell, parameters):
                 perm = np.random.permutation(cluttered_measurement.shape[1])
                 cluttered_measurement = cluttered_measurement[:, perm]
 
+                # 同时打乱标签
+                if return_labels:
+                    true_ids = true_ids[perm]
+                    is_clutter = is_clutter[perm]
+
             # 保存当前时间步传感器的测量
             cluttered_measurements[step][sensor] = cluttered_measurement
 
-    return cluttered_measurements
+            # 保存标签
+            if return_labels:
+                labels[step][sensor] = {
+                    'true_id': true_ids,      # (M,) 每个测量对应的真实锚点ID，-1表示杂波
+                    'is_clutter': is_clutter  # (M,) 布尔数组，True表示杂波
+                }
+
+    if return_labels:
+        return cluttered_measurements, labels
+    else:
+        return cluttered_measurements
 
 
 def calculate_constants_uniform(predicted_particles_agent, new_measurements, parameters):

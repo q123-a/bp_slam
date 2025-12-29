@@ -1,0 +1,77 @@
+[33mcommit eaa0c8a716742f5bd4643b85f74d80fb00827074[m[33m ([m[1;36mHEAD -> [m[1;32mdev[m[33m, [m[1;31morigin/dev[m[33m)[m
+Author: q <2353894071@qq.com>
+Date:   Mon Dec 22 10:48:55 2025 +0800
+
+    failure
+
+[33mcommit 2e28f897d5e2776ca51a6d6827596efb2e4b0d62[m
+Author: q <2353894071@qq.com>
+Date:   Mon Dec 15 17:46:29 2025 +0800
+
+    V1
+
+[33mcommit 5e1b86c2e4aa0aca473fe8a66beaba614597c3c7[m
+Author: q <2353894071@qq.com>
+Date:   Thu Dec 11 15:02:13 2025 +0800
+
+    添加了自我约束
+
+[33mcommit a62241e95871f8d183bdc94fab23522a2fd8af0f[m
+Author: q <2353894071@qq.com>
+Date:   Tue Dec 9 17:41:14 2025 +0800
+
+    增加幅度信息正负样本
+
+[33mcommit afbaea3e9a343515ef342ddcd42a3d12426fb96a[m[33m ([m[1;31morigin/save_gru[m[33m, [m[1;32msave_gru[m[33m)[m
+Author: q <2353894071@qq.com>
+Date:   Thu Dec 4 18:15:41 2025 +0800
+
+    添加GRU模块
+
+[33mcommit 5f5cbb064a20be9378210e4d01335399ba9e0277[m
+Author: q <2353894071@qq.com>
+Date:   Thu Dec 4 17:39:01 2025 +0800
+
+    自定义添加观测数据
+
+[33mcommit 3a09e63f66539258c6a339f888fb04a7d3e8504c[m
+Author: q <2353894071@qq.com>
+Date:   Thu Dec 4 11:26:36 2025 +0800
+
+    add gnn0
+
+[33mcommit ad9b9f43160df5216159e14d2746057b91a5b443[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m
+Author: q <2353894071@qq.com>
+Date:   Fri Nov 28 21:11:07 2025 +0800
+
+    1
+
+[33mcommit 383878118ac42f38acf9c853ffb5061bcef1246a[m
+Author: q <2353894071@qq.com>
+Date:   Fri Nov 28 21:00:36 2025 +0800
+
+    1
+
+[33mcommit 238401fff1421b6a47053e15e7c032c8d5a42c7c[m
+Author: q <2353894071@qq.com>
+Date:   Fri Nov 28 20:14:11 2025 +0800
+
+    init
+
+[33mcommit 00adfc0bf8bc77197f884ebd292dd617d0fcd302[m
+Author: q <2353894071@qq.com>
+Date:   Fri Nov 28 20:13:14 2025 +0800
+
+    1
+
+[33mcommit 778b0666a74a33350d4f02e344f2569829014261[m
+Author: q <2353894071@qq.com>
+Date:   Fri Nov 28 20:05:56 2025 +0800
+
+    Delete
+
+[33mcommit 40939ddda366936a4abc3f7e25ee9da75ee3ae6f[m
+Author: q <2353894071@qq.com>
+Date:   Fri Nov 28 20:00:45 2025 +0800
+
+    Initial clean commit

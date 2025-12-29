@@ -113,12 +113,11 @@ def load_uwb_dataset(location='location0', use_amplitude=True):
                 variances = (stdev_noise / 100.0) ** 2  # stdev_noise单位可能是cm
                 meas[1, :] = np.maximum(variances, 0.0025)
 
-                # 幅度：将RSS (dBm) 转换为线性幅度
+                # 幅度：直接使用 RSS (dBm)，不转换为线性幅度
                 if use_amplitude:
-                    # RSS (dBm) -> 线性功率: P = 10^(RSS/10) mW
-                    # 幅度 = sqrt(P)
-                    linear_power = 10 ** (rss / 10.0)  # mW
-                    meas[2, :] = np.sqrt(linear_power / 1000.0)  # 转换为W的平方根
+                    # [修改] 直接使用 dBm 值，不转换
+                    # RSS 范围通常在 -90 到 -30 dBm 之间
+                    meas[2, :] = rss  # 保持 dBm 单位
                 else:
                     meas[2, :] = 0.0
 

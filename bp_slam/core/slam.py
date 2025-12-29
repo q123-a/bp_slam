@@ -21,13 +21,35 @@ try:
     import torch
     from .gnn_trainer_improved import GNNTrainerImproved, JointDualHeadTrainer
     FGNN_AVAILABLE = True
+
+    # 尝试导入稀疏图 GAT
+    try:
+        from .gnn_trainer_sparse_gat import SparseGATTrainer
+        SPARSE_GAT_AVAILABLE = True
+    except ImportError:
+        SparseGATTrainer = None
+        SPARSE_GAT_AVAILABLE = False
+
+    # 尝试导入稀疏图 GAT V2
+    try:
+        from .gnn_trainer_sparse_gat_v2 import SparseGATTrainer_V2
+        SPARSE_GAT_V2_AVAILABLE = True
+    except ImportError:
+        SparseGATTrainer_V2 = None
+        SPARSE_GAT_V2_AVAILABLE = False
+
 except ImportError:
     FGNN_AVAILABLE = False
+    SPARSE_GAT_AVAILABLE = False
+    SPARSE_GAT_V2_AVAILABLE = False
     JointDualHeadTrainer = None
+    SparseGATTrainer = None
+    SparseGATTrainer_V2 = None
     print("Warning: PyTorch not available. FGNN mode disabled.")
 
 
-def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_trajectory):
+def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_trajectory,
+                       ground_truth_labels=None):
     """
     基于信念传播的多路径SLAM算法核心函数
 
@@ -36,6 +58,8 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
         cluttered_measurements: 带误报的测量数据（距离+方差），列表[num_steps][num_sensors]
         parameters: 算法参数字典
         true_trajectory: 真实轨迹，用于误差计算（已知轨迹模式），shape (n_dims, num_steps)
+        ground_truth_labels: 监督学习标签（可选），列表[num_steps][num_sensors]
+                           每个元素是字典 {'true_id': array, 'is_clutter': array}
 
     返回:
         estimated_trajectory: 估计的移动体状态轨迹（位置+速度），shape (4, num_steps)
@@ -67,6 +91,7 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
     use_gnn = parameters.get('use_gnn', False)
     warmup_steps = parameters.get('gnn_warmup_steps', 50)
     use_dual_head = parameters.get('gnn_use_dual_head', False)  # 是否使用双头架构
+    use_sparse_graph = parameters.get('gnn_use_sparse_graph', False)  # 是否使用稀疏图 GAT
 
     # [新增] GRU隐藏状态管理（每个传感器独立维护）
     # 格式: gnn_hidden_states[sensor] = (M*K, hidden_dim) 的tensor
@@ -85,8 +110,100 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
         gnn_use_temporal_gru = parameters.get('gnn_use_temporal_gru', False)  # 默认关闭跨帧GRU
         gnn_use_layer_gru = parameters.get('gnn_use_layer_gru', False)  # 默认关闭层内GRU
 
-        if use_dual_head:
-            # ===== 双头架构 =====
+        # 检查是否使用稀疏图 GAT
+        use_sparse_graph_v2 = parameters.get('gnn_use_sparse_graph_v2', False)
+
+        if use_sparse_graph:
+            # ===== 稀疏图 GAT =====
+            if use_sparse_graph_v2:
+                # V2 版本：3维边特征 [Δx, Δy, Σ]，无Dustbin
+                if not SPARSE_GAT_V2_AVAILABLE:
+                    print("⚠ 警告: torch_geometric 未安装，无法使用稀疏图 GAT V2")
+                    print("  请运行: pip install torch-geometric")
+                    print("  回退到密集矩阵版本...")
+                    use_sparse_graph = False
+                else:
+                    quality_threshold = parameters.get('gnn_quality_threshold', 0.25)
+                    assoc_threshold = parameters.get('gnn_assoc_threshold', 3.0)
+                    quality_weight = parameters.get('gnn_quality_weight', 1.5)
+                    assoc_weight = parameters.get('gnn_assoc_weight', 1.0)
+                    distance_threshold = parameters.get('gnn_distance_threshold', None)
+                    beta_threshold = parameters.get('gnn_beta_threshold', None)
+
+                    gnn_trainer = SparseGATTrainer_V2(
+                        device=gnn_device,
+                        lr=gnn_lr,
+                        hidden_dim=gnn_hidden_dim,
+                        num_layers=2,
+                        heads=4,
+                        dropout=0.1,
+                        use_temporal_gru=True,
+                        checkpoint_path=gnn_checkpoint_path,
+                        seed=42,
+                        use_ema=gnn_use_ema,
+                        ema_decay=gnn_ema_decay,
+                        quality_threshold=quality_threshold,
+                        assoc_threshold=assoc_threshold,
+                        quality_weight=quality_weight,
+                        assoc_weight=assoc_weight,
+                        adaptive_weighting=True,
+                        distance_threshold=distance_threshold,
+                        beta_threshold=beta_threshold
+                    )
+
+                    print(f"✓ 稀疏图 GAT V2 训练器已初始化 ({gnn_device})")
+                    print(f"  - 版本: V2 (3维边特征 [Δx, Δy, Σ], 无Dustbin)")
+                    print(f"  - 预热步数: {warmup_steps}")
+                    print(f"  - 质量阈值: {quality_threshold}")
+                    print(f"  - 关联阈值: {assoc_threshold}")
+                    print(f"  - 距离阈值: {distance_threshold}")
+                    print(f"  - Beta 阈值: {beta_threshold}")
+            else:
+                # V1 版本：5维边特征，有Dustbin
+                if not SPARSE_GAT_AVAILABLE:
+                    print("⚠ 警告: torch_geometric 未安装，无法使用稀疏图 GAT")
+                    print("  请运行: pip install torch-geometric")
+                    print("  回退到密集矩阵版本...")
+                    use_sparse_graph = False
+                else:
+                    quality_threshold = parameters.get('gnn_quality_threshold', 0.25)
+                    assoc_threshold = parameters.get('gnn_assoc_threshold', 3.0)
+                    quality_weight = parameters.get('gnn_quality_weight', 1.5)
+                    assoc_weight = parameters.get('gnn_assoc_weight', 1.0)
+                    distance_threshold = parameters.get('gnn_distance_threshold', None)
+                    beta_threshold = parameters.get('gnn_beta_threshold', None)
+
+                    gnn_trainer = SparseGATTrainer(
+                        device=gnn_device,
+                        lr=gnn_lr,
+                        hidden_dim=gnn_hidden_dim,
+                        num_layers=2,
+                        heads=4,
+                        dropout=0.1,
+                        use_temporal_gru=True,
+                        checkpoint_path=gnn_checkpoint_path,
+                        seed=42,
+                        use_ema=gnn_use_ema,
+                        ema_decay=gnn_ema_decay,
+                        quality_threshold=quality_threshold,
+                        assoc_threshold=assoc_threshold,
+                        quality_weight=quality_weight,
+                        assoc_weight=assoc_weight,
+                        adaptive_weighting=True,
+                        distance_threshold=distance_threshold,
+                        beta_threshold=beta_threshold
+                    )
+
+                    print(f"✓ 稀疏图 GAT V1 训练器已初始化 ({gnn_device})")
+                    print(f"  - 版本: V1 (5维边特征, 有Dustbin)")
+                    print(f"  - 预热步数: {warmup_steps}")
+                    print(f"  - 质量阈值: {quality_threshold}")
+                    print(f"  - 关联阈值: {assoc_threshold}")
+                    print(f"  - 距离阈值: {distance_threshold}")
+                    print(f"  - Beta 阈值: {beta_threshold}")
+
+        if not use_sparse_graph and use_dual_head:
+            # ===== 双头架构（密集矩阵） =====
             quality_threshold = parameters.get('gnn_quality_threshold', 0.5)
             assoc_threshold = parameters.get('gnn_assoc_threshold', 3.0)
             quality_weight = parameters.get('gnn_quality_weight', 1.0)
@@ -113,7 +230,7 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
             print(f"  - 预热步数: {warmup_steps}")
             print(f"  - 质量阈值: {quality_threshold}")
             print(f"  - 关联阈值: {assoc_threshold}")
-        else:
+        elif not use_sparse_graph:
             # ===== 单头架构（原有） =====
             gnn_pseudo_label_mode = parameters.get('gnn_pseudo_label_mode', 'and')
             gnn_confidence_weighting = parameters.get('gnn_confidence_weighting', True)
@@ -358,227 +475,238 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
 
             if gnn_trainer is not None and num_anchors > 0 and num_filtered_measurements > 0:
                 try:
-                    # 拼接特征
-                    hybrid_input = np.concatenate([legacy_feat, new_feat], axis=1)
-                    hybrid_tensor = torch.from_numpy(hybrid_input).float().unsqueeze(0).to(gnn_trainer.device)
-
-                    # 判断是单头还是双头架构
-                    if use_dual_head:
-                        # ===== 双头架构推理 =====
-                        # [改进] GRU状态现在在trainer内部维护，不需要外部传递
-
-                        # 前向推理（返回3个值：assoc_probs, dustbin_probs, loss）
-                        assoc_probs, dustbin_probs, loss = gnn_trainer.step(
-                            hybrid_tensor,
-                            filtered_measurements,
-                            predicted_measurements,
-                            predicted_uncertainties
-                        )
-
-                        # assoc_probs: (M_filtered, K) 关联概率
-                        # dustbin_probs: (M_filtered,) 杂波概率 [0, 1]
-                        # 注意：dustbin_probs = 1.0 - quality_scores
-
-                        # 打印 Loss 和数据统计
-                        if step % 10 == 0:
-                            print(f"  [双头GNN] Sensor {sensor+1}, Step {step}, Loss: {loss:.4f}")
-
-                            # 统计杂波识别情况
-                            # dustbin_probs高 = 杂波，dustbin_probs低 = 真实信号
-                            num_good = np.sum(dustbin_probs < 0.5)  # 杂波概率<0.5 = 好点
-                            num_bad = np.sum(dustbin_probs >= 0.5)  # 杂波概率>=0.5 = 杂波
-                            print(f"    杂波识别: {num_good}/{len(dustbin_probs)} 个真实信号, {num_bad} 个杂波")
-
-                            # [关键验证] 统计输入数据中的真实杂波比例
-                            # 使用内在一致性误差判断真实杂波
-                            high_error_count = np.sum(filtered_intrinsic_errors > 2.0)  # >20dB
-                            mid_error_count = np.sum((filtered_intrinsic_errors > 1.2) & (filtered_intrinsic_errors <= 2.0))
-                            low_error_count = np.sum(filtered_intrinsic_errors <= 1.2)
-                            print(f"    输入数据: 高误差(>20dB)={high_error_count}, 中误差(12-20dB)={mid_error_count}, 低误差(<12dB)={low_error_count}")
-
-                            # 验证GNN是否正确识别了杂波
-                            if high_error_count > 0:
-                                print(f"    ✓ GNN能看到真实杂波！（移除了15dB硬过滤，现在是50dB）")
-
-                        # 决策：预热期后使用 GNN 结果
-                        if step > warmup_steps:
-                            use_gnn_result = True
-
-                            # [关键] 双头架构的输出处理
-                            # 1. 杂波概率（已经由trainer转换好了）
-                            gnn_dustbin_filtered = dustbin_probs
-
-                            # 2. 关联概率（已经是概率，不需要再除以dustbin）
-                            gnn_probs = assoc_probs
-
-                            # 3. 映射回原始测量索引
-                            full_gnn_probs = np.zeros((num_measurements, num_anchors))
-                            full_gnn_dustbin = np.ones(num_measurements)  # 被过滤的测量默认为杂波
-
-                            valid_indices = np.where(valid_mask)[0]
-                            full_gnn_probs[valid_indices, :] = gnn_probs
-                            full_gnn_dustbin[valid_indices] = gnn_dustbin_filtered
-
-                            # 4. 转换为 BP 消息格式
-                            # message_lhf_ratios: (M, K) 表示测量-锚点关联强度
-
-                            # [关键修正] 质量头和关联头完全解耦
-                            # 核心思想：
-                            #   - 质量头：只用于过滤明显的杂波（dustbin > 0.8）和检测新锚点
-                            #   - 关联头：完全负责已知锚点的关联，不受质量头影响
-                            #
-                            # 原问题：message = assoc × (1 - dustbin)
-                            #   - 质量头误判（dustbin=0.9）会压制关联消息
-                            #   - 导致锚点存在概率剧烈波动（0.09 ↔ 0.99）
-                            #   - 产生 OSPA 尖峰
-                            #
-                            # 改进：对于已知锚点的关联，完全信任关联头的几何匹配
-                            #   - 只过滤明显的杂波（dustbin > 0.8）
-                            #   - 其他测量完全使用关联概率
-
-                            # 过滤明显的杂波
-                            quality_mask = (full_gnn_dustbin < 0.8)  # dustbin < 0.8 才参与关联
-
-                            # 对于通过质量检查的测量，完全使用关联概率
-                            message_lhf_ratios = full_gnn_probs.copy()
-                            message_lhf_ratios[~quality_mask, :] = 0.0  # 明显杂波的关联消息设为0
-
-                            # 5. 新锚点消息：GNN判断（质量高 + 关联低 → 可能是新锚点）
-                            max_assoc_prob = np.max(full_gnn_probs, axis=1)
-                            messages_new_gnn = (1.0 - full_gnn_dustbin) * (1.0 - max_assoc_prob)
-
-                            # [修正] 直接使用GNN的判断，不融合BP先验
-                            # 原因：
-                            # 1. new_input_bp ≈ 1.0-1.2，影响微小
-                            # 2. 直接相乘破坏概率语义（结果可能>1）
-                            # 3. 失配模式下，应完全信任数据驱动的GNN判断
-                            messages_new_raw = messages_new_gnn
-
-                            # [新增] 新锚点候选缓冲区验证机制
-                            # 防止瞬时噪声被误判为新锚点，要求连续多帧检测
-                            messages_new = np.maximum(messages_new_raw, 1e-6)
-
-                            # 更新候选缓冲区
-                            current_candidates = candidate_anchors[sensor]
-                            new_candidates = {}
-
-                            for m in range(num_measurements):
-                                if messages_new_raw[m] > candidate_threshold:
-                                    # 高置信度新锚点候选
-                                    # 计算测量位置（粗略估计）
-                                    meas_dist = measurements[0, m]
-                                    agent_pos = np.mean(predicted_particles_agent[0:2, :], axis=1)
-
-                                    # 查找是否有相近的候选（距离 < 0.5m）
-                                    found_match = False
-                                    for cand_id, cand_info in current_candidates.items():
-                                        # 简单距离检查（这里用测量距离差作为近似）
-                                        if abs(meas_dist - cand_info['distance']) < 0.5:
-                                            # 找到匹配的候选
-                                            if step - cand_info['last_step'] <= candidate_max_gap:
-                                                # 间隔不超过最大允许间隔，更新计数
-                                                new_candidates[cand_id] = {
-                                                    'distance': meas_dist,
-                                                    'count': cand_info['count'] + 1,
-                                                    'last_step': step
-                                                }
-                                                found_match = True
-
-                                                # 检查是否达到最小帧数要求
-                                                if new_candidates[cand_id]['count'] < candidate_min_frames:
-                                                    # 还未达到要求，降低 messages_new
-                                                    messages_new[m] = messages_new_raw[m] * 0.1
-                                                # else: 达到要求，保持原始 messages_new
-                                                break
-
-                                    if not found_match:
-                                        # 新候选，创建条目
-                                        new_cand_id = f"step{step}_meas{m}"
-                                        new_candidates[new_cand_id] = {
-                                            'distance': meas_dist,
-                                            'count': 1,
-                                            'last_step': step
-                                        }
-                                        # 第一次检测，大幅降低 messages_new
-                                        messages_new[m] = messages_new_raw[m] * 0.1
-
-                            # 更新缓冲区（只保留活跃的候选）
-                            candidate_anchors[sensor] = new_candidates
-
+                    # 提取当前时间步和传感器的监督学习标签
+                    current_labels = None
+                    if ground_truth_labels is not None:
+                        current_labels = ground_truth_labels[step][sensor]
+                        # 过滤标签，只保留通过物理检查的测量
+                        if current_labels is not None:
+                            filtered_labels = {
+                                'true_id': current_labels['true_id'][valid_mask],
+                                'is_clutter': current_labels['is_clutter'][valid_mask]
+                            }
+                        else:
+                            filtered_labels = None
                     else:
-                        # ===== 单头架构推理（原有逻辑） =====
-                        gnn_probs, gnn_dustbin, loss = gnn_trainer.step(
-                            hybrid_tensor,
-                            filtered_measurements,  # 使用过滤后的测量
-                            predicted_measurements,
-                            predicted_uncertainties
+                        filtered_labels = None
+
+                    # 检查是否使用稀疏图 GAT
+                    if use_sparse_graph and use_sparse_graph_v2 and SPARSE_GAT_V2_AVAILABLE:
+                        # ===== 稀疏图 GAT V2 =====
+                        # V2 版本需要粒子信息来计算 2D 残差
+                        # 只在最后一个传感器时更新权重（梯度累积）
+                        is_last_sensor = (sensor == num_sensors - 1)
+
+                        # [DEBUG] 标签检查
+                        if step == 10 and sensor == 0:
+                            print(f"\n[DEBUG] 标签检查:")
+                            if filtered_labels is not None:
+                                print(f"  ✓ 标签存在")
+                                print(f"  真实信号: {np.sum(~filtered_labels['is_clutter'])}")
+                                print(f"  杂波: {np.sum(filtered_labels['is_clutter'])}")
+                            else:
+                                print(f"  ❌ 标签为 None - 没有使用监督学习！")
+
+                        assoc_probs, dustbin_probs, sigma_scale, loss = gnn_trainer.step(
+                            filtered_measurements=filtered_measurements,
+                            predicted_measurements=predicted_measurements,
+                            predicted_uncertainties=predicted_uncertainties,
+                            existence_probs=existence_probs,
+                            predicted_particles_agent=predicted_particles_agent,
+                            predicted_particles_anchors=predicted_particles_anchors,
+                            weights_anchor=weights_anchor,
+                            P_tx=P_tx,
+                            n=n,
+                            num_iterations=3,
+                            sensor_id=sensor,
+                            ground_truth_labels=filtered_labels,  # 传递监督标签
+                            update_weights=is_last_sensor  # 只在最后一个传感器更新
                         )
+                    elif use_sparse_graph and SPARSE_GAT_AVAILABLE:
+                        # ===== 稀疏图 GAT V1 =====
+                        # V1 版本使用 Beta 矩阵
+                        assoc_probs, dustbin_probs, sigma_scale, loss = gnn_trainer.step(
+                            filtered_measurements=filtered_measurements,
+                            predicted_measurements=predicted_measurements,
+                            predicted_uncertainties=predicted_uncertainties,
+                            existence_probs=existence_probs,
+                            beta_matrix_filtered=beta_matrix_filtered,
+                            undetected_anchors_intensity=undetected_anchors_intensity[sensor],
+                            clutter_intensity=clutter_intensity,
+                            detection_probability=detection_probability,
+                            P_tx=P_tx,
+                            n=n,
+                            num_iterations=3,
+                            sensor_id=sensor,
+                            ground_truth_labels=filtered_labels  # 传递监督标签
+                        )
+                    else:
+                        # ===== 密集矩阵版本（V1） =====
+                        # 拼接特征
+                        hybrid_input = np.concatenate([legacy_feat, new_feat], axis=1)
+                        hybrid_tensor = torch.from_numpy(hybrid_input).float().unsqueeze(0).to(gnn_trainer.device)
 
-                        # 打印 Loss
-                        if step % 10 == 0:
-                            print(f"  [单头GNN] Sensor {sensor+1}, Step {step}, Loss: {loss:.4f}")
+                        # 判断是单头还是双头架构
+                        if use_dual_head:
+                            # ===== 双头架构推理 =====
+                            # [改进] GRU状态现在在trainer内部维护，不需要外部传递
 
-                        # 决策：预热期后使用 GNN 结果
-                        if step > warmup_steps:
-                            use_gnn_result = True
+                            # 前向推理（返回4个值：assoc_probs, dustbin_probs, sigma_scale, loss）
+                            assoc_probs, dustbin_probs, sigma_scale, loss = gnn_trainer.step(
+                                hybrid_tensor,
+                                filtered_measurements,
+                                predicted_measurements,
+                                predicted_uncertainties,
+                                sensor_id=sensor
+                            )
+                        else:
+                            # ===== 单头架构（暂不支持） =====
+                            raise NotImplementedError("单头架构暂不支持")
 
-                            # 映射回原始测量索引
-                            full_gnn_probs = np.zeros((num_measurements, num_anchors))
-                            full_gnn_dustbin = np.ones(num_measurements)  # 被过滤的测量默认为杂波
+                    # assoc_probs: (M_filtered, K) 关联概率
+                    # dustbin_probs: (M_filtered,) 杂波概率 [0, 1]
+                    # 注意：dustbin_probs = 1.0 - quality_scores
 
-                            valid_indices = np.where(valid_mask)[0]
-                            full_gnn_probs[valid_indices, :] = gnn_probs
-                            full_gnn_dustbin[valid_indices] = gnn_dustbin
+                    # 打印 Loss 和数据统计
+                    if step % 10 == 0:
+                        if use_sparse_graph and use_sparse_graph_v2 and SPARSE_GAT_V2_AVAILABLE:
+                            gnn_type = "稀疏图 GAT V2"
+                        elif use_sparse_graph and SPARSE_GAT_AVAILABLE:
+                            gnn_type = "稀疏图 GAT V1"
+                        else:
+                            gnn_type = "双头GNN"
+                        print(f"  [{gnn_type}] Sensor {sensor+1}, Step {step}, Loss: {loss:.4f}")
 
-                            # 转换为 BP 消息格式
-                            message_lhf_ratios = full_gnn_probs / (full_gnn_dustbin[:, np.newaxis] + 1e-10)
+                        # 统计 GNN 预测的杂波识别情况
+                        # dustbin_probs高 = 杂波，dustbin_probs低 = 真实信号
+                        num_predicted_good = np.sum(dustbin_probs < 0.5)  # 预测为真实信号
+                        num_predicted_bad = np.sum(dustbin_probs >= 0.5)  # 预测为杂波
+                        print(f"    GNN预测: {num_predicted_good}/{len(dustbin_probs)} 个真实信号, {num_predicted_bad} 个杂波")
 
-                            # 新锚点消息：GNN判断（dustbin低 → 可能是新锚点）
-                            messages_new_gnn = np.exp(-0.5 * full_gnn_dustbin)
+                        # 如果有真实标签，显示真实标签统计和准确率
+                        if filtered_labels is not None:
+                            true_signals = np.sum(~filtered_labels['is_clutter'])
+                            true_clutter = np.sum(filtered_labels['is_clutter'])
+                            print(f"    真实标签: {true_signals} 个真实信号, {true_clutter} 个杂波")
 
-                            # [修正] 直接使用GNN的判断，不融合BP先验
-                            # 原因同双头架构：保持概率语义，完全信任数据驱动判断
-                            messages_new_raw = messages_new_gnn
+                            # 计算准确率
+                            predicted_clutter = (dustbin_probs >= 0.5)
+                            true_clutter_mask = filtered_labels['is_clutter']
+                            correct = np.sum(predicted_clutter == true_clutter_mask)
+                            accuracy = correct / len(dustbin_probs) * 100
+                            print(f"    识别准确率: {accuracy:.1f}% ({correct}/{len(dustbin_probs)})")
 
-                            # [新增] 新锚点候选缓冲区验证机制（单头架构）
-                            messages_new = np.maximum(messages_new_raw, 1e-6)
+                    # 每 50 步打印一次损失统计
+                    if step % 50 == 0 and step > 0:
+                        print("\n" + "-" * 60)
+                        gnn_trainer.print_loss_statistics(window_size=50)
+                        print("-" * 60 + "\n")
 
-                            # 更新候选缓冲区
-                            current_candidates = candidate_anchors[sensor]
-                            new_candidates = {}
+                    # 决策：预热期后使用 GNN 结果
+                    if step > warmup_steps:
+                        use_gnn_result = True
 
-                            for m in range(num_measurements):
-                                if messages_new_raw[m] > candidate_threshold:
-                                    # 高置信度新锚点候选
-                                    meas_dist = measurements[0, m]
+                        # [关键] 双头架构的输出处理
+                        # 1. 杂波概率（已经由trainer转换好了）
+                        gnn_dustbin_filtered = dustbin_probs
 
-                                    # 查找是否有相近的候选
-                                    found_match = False
-                                    for cand_id, cand_info in current_candidates.items():
-                                        if abs(meas_dist - cand_info['distance']) < 0.5:
-                                            if step - cand_info['last_step'] <= candidate_max_gap:
-                                                new_candidates[cand_id] = {
-                                                    'distance': meas_dist,
-                                                    'count': cand_info['count'] + 1,
-                                                    'last_step': step
-                                                }
-                                                found_match = True
+                        # 2. 关联概率（已经是概率，不需要再除以dustbin）
+                        gnn_probs = assoc_probs
 
-                                                if new_candidates[cand_id]['count'] < candidate_min_frames:
-                                                    messages_new[m] = messages_new_raw[m] * 0.1
-                                                break
+                        # 3. 映射回原始测量索引
+                        full_gnn_probs = np.zeros((num_measurements, num_anchors))
+                        full_gnn_dustbin = np.ones(num_measurements)  # 被过滤的测量默认为杂波
 
-                                    if not found_match:
-                                        new_cand_id = f"step{step}_meas{m}"
-                                        new_candidates[new_cand_id] = {
-                                            'distance': meas_dist,
-                                            'count': 1,
-                                            'last_step': step
-                                        }
-                                        messages_new[m] = messages_new_raw[m] * 0.1
+                        valid_indices = np.where(valid_mask)[0]
+                        full_gnn_probs[valid_indices, :] = gnn_probs
+                        full_gnn_dustbin[valid_indices] = gnn_dustbin_filtered
 
-                            candidate_anchors[sensor] = new_candidates
-                        
+                        # 4. 转换为 BP 消息格式
+                        # message_lhf_ratios: (M, K) 表示测量-锚点关联强度
+
+                        # [关键修正] 质量头和关联头完全解耦
+                        # 核心思想：
+                        #   - 质量头：只用于过滤明显的杂波（dustbin > 0.8）和检测新锚点
+                        #   - 关联头：完全负责已知锚点的关联，不受质量头影响
+                        #
+                        # 原问题：message = assoc × (1 - dustbin)
+                        #   - 质量头误判（dustbin=0.9）会压制关联消息
+                        #   - 导致锚点存在概率剧烈波动（0.09 ↔ 0.99）
+                        #   - 产生 OSPA 尖峰
+                        #
+                        # 改进：对于已知锚点的关联，完全信任关联头的几何匹配
+                        #   - 只过滤明显的杂波（dustbin > 0.8）
+                        #   - 其他测量完全使用关联概率
+
+                        # 过滤明显的杂波
+                        quality_mask = (full_gnn_dustbin < 0.8)  # dustbin < 0.8 才参与关联
+
+                        # 对于通过质量检查的测量，完全使用关联概率
+                        message_lhf_ratios = full_gnn_probs.copy()
+                        message_lhf_ratios[~quality_mask, :] = 0.0  # 明显杂波的关联消息设为0
+
+                        # 5. 新锚点消息：GNN判断（质量高 + 关联低 → 可能是新锚点）
+                        max_assoc_prob = np.max(full_gnn_probs, axis=1)
+                        messages_new_gnn = (1.0 - full_gnn_dustbin) * (1.0 - max_assoc_prob)
+
+                        # [修正] 直接使用GNN的判断，不融合BP先验
+                        # 原因：
+                        # 1. new_input_bp ≈ 1.0-1.2，影响微小
+                        # 2. 直接相乘破坏概率语义（结果可能>1）
+                        # 3. 失配模式下，应完全信任数据驱动的GNN判断
+                        messages_new_raw = messages_new_gnn
+
+                        # [新增] 新锚点候选缓冲区验证机制
+                        # 防止瞬时噪声被误判为新锚点，要求连续多帧检测
+                        messages_new = np.maximum(messages_new_raw, 1e-6)
+
+                        # 更新候选缓冲区
+                        current_candidates = candidate_anchors[sensor]
+                        new_candidates = {}
+
+                        for m in range(num_measurements):
+                            if messages_new_raw[m] > candidate_threshold:
+                                # 高置信度新锚点候选
+                                # 计算测量位置（粗略估计）
+                                meas_dist = measurements[0, m]
+                                agent_pos = np.mean(predicted_particles_agent[0:2, :], axis=1)
+
+                                # 查找是否有相近的候选（距离 < 0.5m）
+                                found_match = False
+                                for cand_id, cand_info in current_candidates.items():
+                                    # 简单距离检查（这里用测量距离差作为近似）
+                                    if abs(meas_dist - cand_info['distance']) < 0.5:
+                                        # 找到匹配的候选
+                                        if step - cand_info['last_step'] <= candidate_max_gap:
+                                            # 间隔不超过最大允许间隔，更新计数
+                                            new_candidates[cand_id] = {
+                                                'distance': meas_dist,
+                                                'count': cand_info['count'] + 1,
+                                                'last_step': step
+                                            }
+                                            found_match = True
+
+                                            # 检查是否达到最小帧数要求
+                                            if new_candidates[cand_id]['count'] < candidate_min_frames:
+                                                # 还未达到要求，降低 messages_new
+                                                messages_new[m] = messages_new_raw[m] * 0.1
+                                            # else: 达到要求，保持原始 messages_new
+                                            break
+
+                                if not found_match:
+                                    # 新候选，创建条目
+                                    new_cand_id = f"step{step}_meas{m}"
+                                    new_candidates[new_cand_id] = {
+                                        'distance': meas_dist,
+                                        'count': 1,
+                                        'last_step': step
+                                    }
+                                    # 第一次检测，大幅降低 messages_new
+                                    messages_new[m] = messages_new_raw[m] * 0.1
+
+                        # 更新缓冲区（只保留活跃的候选）
+                        candidate_anchors[sensor] = new_candidates
+
                 except Exception as e:
                     print(f"  [GNN] Error at step {step}, sensor {sensor}: {e}")
 
@@ -825,5 +953,25 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
         print(f'Position error agent: {error_agent:.6f}')
         print(f'Execution Time: {exec_time_per_step[step]:.4f}')
         print('---------------------------------------------------\n')
+
+    # 保存 GNN 权重和损失历史（如果启用且不是仅推理模式）
+    if use_gnn and gnn_trainer is not None:
+        if not parameters.get('gnn_inference_only', False):
+            # 打印损失统计
+            print("\n" + "=" * 80)
+            print("GNN 训练损失统计")
+            print("=" * 80)
+            gnn_trainer.print_loss_statistics(window_size=50)
+            print("=" * 80 + "\n")
+
+            # 保存权重
+            if parameters.get('gnn_save_checkpoint', False):
+                checkpoint_path = parameters.get('gnn_checkpoint_save_path', 'checkpoints/gnn_model.pth')
+                gnn_trainer.save_checkpoint(checkpoint_path)
+
+            # 保存损失历史到 CSV
+            if parameters.get('gnn_save_loss_csv', True):  # 默认保存
+                loss_csv_path = parameters.get('gnn_loss_csv_path', 'results/loss_history.csv')
+                gnn_trainer.save_loss_history_to_csv(loss_csv_path)
 
     return estimated_trajectory, estimated_anchors, posterior_particles_anchors_storage, num_estimated_anchors

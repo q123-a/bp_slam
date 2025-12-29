@@ -11,6 +11,7 @@ import os
 from datetime import datetime
 import numpy as np
 import scipy.io as sio
+from scipy.optimize import linear_sum_assignment
 from bp_slam.utils.measurements import generate_measurements, generate_cluttered_measurements
 from bp_slam.core.slam import bp_based_mint_slam
 
@@ -36,8 +37,106 @@ class Logger:
         self.log.close()
 
 
+def infer_labels_with_hungarian(measurements_cell, data_va, true_trajectory, num_steps, num_sensors):
+    """
+    使用匈牙利算法推断测量数据的真实标签
+
+    核心思路：
+    1. 对于每个时间步和传感器，计算测量距离和真实距离的代价矩阵
+    2. 使用匈牙利算法找到最优匹配
+    3. 根据匹配结果推断 true_id
+    4. 未匹配的测量标记为杂波
+
+    参数:
+        measurements_cell: (num_steps, num_sensors) 测量数据列表
+        data_va: 虚拟锚点数据
+        true_trajectory: 真实轨迹 (2, num_steps)
+        num_steps: 时间步数
+        num_sensors: 传感器数量
+
+    返回:
+        labels: (num_steps, num_sensors) 标签列表
+                每个元素是字典 {'true_id': array, 'is_clutter': array}
+    """
+    labels = [[None for _ in range(num_sensors)] for _ in range(num_steps)]
+
+    # 统计信息
+    total_measurements = 0
+    total_matched = 0
+    total_unmatched = 0
+
+    for step in range(num_steps):
+        for sensor in range(num_sensors):
+            meas = measurements_cell[step][sensor]
+
+            if meas is None or meas.size == 0:
+                # 没有测量数据
+                labels[step][sensor] = {
+                    'true_id': np.array([], dtype=int),
+                    'is_clutter': np.array([], dtype=bool)
+                }
+                continue
+
+            M = meas.shape[1]  # 测量数量
+            total_measurements += M
+
+            # 获取锚点位置
+            anchor_positions = data_va[sensor]['positions']  # (2, K)
+            K = anchor_positions.shape[1]  # 锚点数量
+
+            # 获取当前时刻移动体的真实位置
+            agent_pos = true_trajectory[:2, step]  # (2,)
+
+            # 计算真实距离（从移动体到每个锚点）
+            true_distances = np.zeros(K)
+            for k in range(K):
+                dx = anchor_positions[0, k] - agent_pos[0]
+                dy = anchor_positions[1, k] - agent_pos[1]
+                true_distances[k] = np.sqrt(dx**2 + dy**2)
+
+            # 构建代价矩阵 (M, K)
+            # 代价 = |测量距离 - 真实距离|
+            cost_matrix = np.zeros((M, K))
+            for m in range(M):
+                meas_dist = meas[0, m]
+                for k in range(K):
+                    cost_matrix[m, k] = abs(meas_dist - true_distances[k])
+
+            # 使用匈牙利算法求解最优匹配
+            row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+            # 初始化标签
+            true_ids = np.full(M, -1, dtype=int)  # -1 表示杂波
+            is_clutter = np.ones(M, dtype=bool)   # 默认全是杂波
+
+            # 根据匹配结果更新标签
+            # 只有当匹配代价小于阈值时，才认为是真实匹配
+            match_threshold = 2.0  # 2米阈值
+            for i, (m, k) in enumerate(zip(row_ind, col_ind)):
+                if cost_matrix[m, k] < match_threshold:
+                    true_ids[m] = k
+                    is_clutter[m] = False
+                    total_matched += 1
+                else:
+                    total_unmatched += 1
+
+            # 保存标签
+            labels[step][sensor] = {
+                'true_id': true_ids,
+                'is_clutter': is_clutter
+            }
+
+    # 打印统计信息
+    print(f"  - 总测量数: {total_measurements}")
+    print(f"  - 成功匹配: {total_matched} ({total_matched/max(total_measurements,1)*100:.1f}%)")
+    print(f"  - 未匹配(杂波): {total_unmatched} ({total_unmatched/max(total_measurements,1)*100:.1f}%)")
+
+    return labels
+
+
 def load_measurements_from_mat(mat_file='measurementbadf.mat', add_synthetic_clutter=False,
-                               parameters=None, mismatch_mode=False):
+                               parameters=None, mismatch_mode=False, return_labels=False,
+                               data_va=None, true_trajectory=None):
     """
     从 MAT 文件加载预先生成的检测数据，并应用自适应方差计算
 
@@ -46,10 +145,15 @@ def load_measurements_from_mat(mat_file='measurementbadf.mat', add_synthetic_clu
         add_synthetic_clutter: bool, 是否在加载的数据上添加合成杂波 (默认False)
         parameters: 参数字典，当 add_synthetic_clutter=True 时需要提供
         mismatch_mode: bool, 参数失配模式（实际杂波与BP假设不同）
+        return_labels: bool, 是否使用匈牙利算法推断标签（用于监督学习）
+        data_va: 虚拟锚点数据，当 return_labels=True 时需要提供
+        true_trajectory: 真实轨迹，当 return_labels=True 时需要提供
 
     返回:
         cluttered_measurements: 检测数据，shape (num_steps, num_sensors) 的列表
                                每个元素是 (3, num_detections) 的数组（距离+方差+幅度）
+        labels (可选): 如果 return_labels=True，返回标签字典
+                      包含 'true_id' 和 'is_clutter'
     """
     print(f"从 {mat_file} 加载检测数据...")
     mat_data = sio.loadmat(mat_file)
@@ -97,6 +201,18 @@ def load_measurements_from_mat(mat_file='measurementbadf.mat', add_synthetic_clu
 
     print(f"✓ 成功加载检测数据: {num_steps} 步, {num_sensors} 个传感器")
 
+    # [新增] 使用匈牙利算法推断标签
+    labels = None
+    if return_labels:
+        if data_va is None or true_trajectory is None:
+            raise ValueError("推断标签时必须提供 data_va 和 true_trajectory 参数")
+
+        print(f"\n使用匈牙利算法推断测量标签...")
+        labels = infer_labels_with_hungarian(
+            cluttered_measurements, data_va, true_trajectory, num_steps, num_sensors
+        )
+        print(f"✓ 标签推断完成")
+
     # [新增] 添加合成杂波
     if add_synthetic_clutter:
         if parameters is None:
@@ -107,15 +223,26 @@ def load_measurements_from_mat(mat_file='measurementbadf.mat', add_synthetic_clu
         print(f"  - 检测概率: {parameters['detectionProbability']}")
         print(f"  - 区域大小: {parameters['regionOfInterestSize']} m")
 
-        cluttered_measurements = add_synthetic_clutter_to_measurements(
-            cluttered_measurements, parameters, mismatch_mode=mismatch_mode
-        )
+        if return_labels:
+            # 添加杂波并更新标签
+            cluttered_measurements, labels = add_synthetic_clutter_to_measurements(
+                cluttered_measurements, parameters, mismatch_mode=mismatch_mode,
+                return_labels=True, existing_labels=labels
+            )
+        else:
+            cluttered_measurements = add_synthetic_clutter_to_measurements(
+                cluttered_measurements, parameters, mismatch_mode=mismatch_mode
+            )
         print(f"✓ 合成杂波添加完成")
 
-    return cluttered_measurements
+    if return_labels:
+        return cluttered_measurements, labels
+    else:
+        return cluttered_measurements
 
 
-def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatch_mode=False):
+def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatch_mode=False,
+                                         return_labels=False, existing_labels=None):
     """
     在已加载的测量数据上添加合成杂波和漏检
 
@@ -124,9 +251,12 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
                           每个元素是 (3, num_detections) 的数组（距离+方差+幅度）
         parameters: 参数字典，包括测量方差、检测概率、杂波均值、区域大小等
         mismatch_mode: bool, 是否使用参数失配模式（实际杂波参数与BP假设不同）
+        return_labels: bool, 是否返回标签（用于监督学习）
+        existing_labels: 已有的标签（如果有的话），会在添加杂波时更新
 
     返回:
         cluttered_measurements: 添加杂波后的测量数据，shape同输入
+        labels (可选): 如果 return_labels=True，返回标签字典
     """
     # 读取参数
     measurement_variance_range = parameters['measurementVariance']
@@ -154,6 +284,10 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
     # 初始化输出
     cluttered_measurements = [[None for _ in range(num_sensors)] for _ in range(num_steps)]
 
+    # 如果需要返回标签，初始化标签存储
+    if return_labels:
+        labels = [[None for _ in range(num_sensors)] for _ in range(num_steps)]
+
     # 统计信息
     total_original = 0
     total_detected = 0
@@ -167,6 +301,7 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
             if original_measurements is None or original_measurements.size == 0:
                 num_detections = 0
                 detected_measurements = np.zeros((3, 0))
+                detected_ids = np.array([], dtype=int)
             else:
                 num_detections = original_measurements.shape[1]
                 total_original += num_detections
@@ -177,6 +312,15 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
                 # 提取被检测到的测量（保留3行：距离、方差、幅度）
                 detected_measurements = original_measurements[:, detection_indicator]
                 total_detected += detected_measurements.shape[1]
+
+                # 记录被检测到的测量ID（如果有已有标签）
+                if return_labels and existing_labels is not None:
+                    # 使用已有标签中的 true_id
+                    original_true_ids = existing_labels[step][sensor]['true_id']
+                    detected_ids = original_true_ids[detection_indicator]
+                else:
+                    # 假设原始测量按顺序对应锚点 ID
+                    detected_ids = np.where(detection_indicator)[0]
 
             # 生成误报（杂波）数量，符合泊松分布
             num_false_alarms = np.random.poisson(mean_number_of_clutter)
@@ -199,29 +343,52 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
                 # 2. 只是稍微弱一点（反射损耗）
                 # 3. 是GNN最难分辨的对手！
 
-                # 路径损耗参数（与slam.py保持一致）
-                P_tx = 15.41
+                # [修改] 杂波物理参数：让杂波显著弱于真实信号
+                # 问题：原来的 P_tx=15.41 太强，导致杂波和真信号强度相近
+                # 解决：降低虚拟发射功率 + 增加反射损耗
+
+                # 1. 降低杂波的虚拟发射功率
+                # 真实信号 P_tx=15.41，杂波使用更低的功率模拟非视距传播
+                P_tx_clutter = -10.0  # 从 15.41 降低到 -10
                 n = 2.0
 
-                # 1. 计算杂波距离对应的理论RSS（假设是直达波）
+                # 2. 计算杂波距离对应的理论RSS
                 clutter_dists = false_alarms[0, :]
                 safe_dists = np.maximum(clutter_dists, 0.1)  # 防止log(0)
-                rss_theory = P_tx - 10 * n * np.log10(safe_dists)
+                rss_theory = P_tx_clutter - 10 * n * np.log10(safe_dists)
 
-                # 2. 生成反射损耗 (Reflection Loss)
-                # 反射损耗在 3dB 到 20dB 之间均匀分布
-                # 3dB: 轻微反射（墙面、地面）
-                # 20dB: 强烈衰减（多次反射、穿墙）
-                reflection_loss = np.random.uniform(3.0, 20.0, num_false_alarms)
+                # 3. 增加反射损耗 (Reflection Loss)
+                # 从 3-20dB 增加到 15-35dB，模拟强烈的非视距衰减
+                # 15dB: 单次墙面反射
+                # 35dB: 多次反射 + 穿墙衰减
+                reflection_loss = np.random.uniform(15.0, 35.0, num_false_alarms)
 
-                # 3. 合成杂波RSS = 理论值 - 反射损耗 + 小噪声
-                # 添加小噪声（2dB标准差）模拟测量不确定性
-                false_alarms[2, :] = rss_theory - reflection_loss + np.random.normal(0, 2.0, num_false_alarms)
+                # 4. 合成杂波RSS = 理论值 - 反射损耗 + 小噪声
+                clutter_rss_dbm = rss_theory - reflection_loss + np.random.normal(0, 2.0, num_false_alarms)
+
+                # 5. 强行截断：确保杂波不超过 -30 dBm（远低于真实信号的 -13 dBm）
+                clutter_rss_dbm = np.minimum(clutter_rss_dbm, -30.0)
+
+                false_alarms[2, :] = clutter_rss_dbm
 
                 # 结果：
-                # - 近距离杂波：RSS高，但比理论值低3-20dB
-                # - 远距离杂波：RSS低，但仍然符合衰减规律
-                # - 非常难以区分！需要GNN学习更复杂的模式
+                # - 杂波 RSS 范围：约 -60 ~ -30 dBm
+                # - 真实信号 RSS：约 -13 ~ 1 dBm
+                # - 差距显著，GNN 可以学习区分
+
+            # 生成标签（在打乱之前）
+            if return_labels:
+                # 杂波的 true_id = -1, is_clutter = True
+                clutter_true_ids = np.full(num_false_alarms, -1, dtype=int)
+                clutter_is_clutter = np.ones(num_false_alarms, dtype=bool)
+
+                # 真实测量的 true_id = 锚点ID, is_clutter = False
+                detected_true_ids = detected_ids
+                detected_is_clutter = np.zeros(len(detected_ids), dtype=bool)
+
+                # 拼接标签
+                true_ids = np.concatenate([clutter_true_ids, detected_true_ids])
+                is_clutter = np.concatenate([clutter_is_clutter, detected_is_clutter])
 
             # 将误报和真实检测测量拼接
             if detected_measurements.size > 0:
@@ -234,8 +401,20 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
                 perm = np.random.permutation(cluttered_measurement.shape[1])
                 cluttered_measurement = cluttered_measurement[:, perm]
 
+                # 同时打乱标签
+                if return_labels:
+                    true_ids = true_ids[perm]
+                    is_clutter = is_clutter[perm]
+
             # 保存当前时间步传感器的测量
             cluttered_measurements[step][sensor] = cluttered_measurement
+
+            # 保存标签
+            if return_labels:
+                labels[step][sensor] = {
+                    'true_id': true_ids,
+                    'is_clutter': is_clutter
+                }
 
     # 打印统计信息
     print(f"\n杂波添加统计:")
@@ -245,12 +424,17 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
     print(f"  - 添加的杂波: {total_clutter}")
     print(f"  - 最终测量总数: {total_detected + total_clutter}")
 
-    return cluttered_measurements
+    if return_labels:
+        return cluttered_measurements, labels
+    else:
+        return cluttered_measurements
 
 
 def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
          gnn_load_checkpoint=None, gnn_save_checkpoint=True, gnn_inference_only=False,
-         load_measurements=None, add_synthetic_clutter=False, mismatch_mode=False):
+         load_measurements=None, add_synthetic_clutter=False, mismatch_mode=False,
+         use_sparse_graph=False, use_sparse_graph_v2=False,
+         distance_threshold=None, beta_threshold=None):
     """
     主测试函数
 
@@ -259,6 +443,10 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         max_steps: int, 运行步数 (默认900)
         num_particles: int, 粒子数量 (默认100000)
         gnn_warmup: int or None, GNN预热步数 (None表示自动计算)
+        use_sparse_graph: bool, 是否使用稀疏图 GAT
+        use_sparse_graph_v2: bool, 是否使用稀疏图 GAT V2 (3维边特征，无Dustbin)
+        distance_threshold: float or None, 稀疏图距离阈值
+        beta_threshold: float or None, 稀疏图 Beta 阈值
         gnn_load_checkpoint: str or None, GNN权重加载路径 (None表示从头训练)
         gnn_save_checkpoint: bool, 是否保存GNN权重 (默认True)
         gnn_inference_only: bool, 是否仅推理模式 (True=不训练，False=训练)
@@ -456,8 +644,28 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
         parameters['gnn_checkpoint_save_path'] = 'checkpoints/gnn_model.pth'
         parameters['gnn_inference_only'] = gnn_inference_only
 
-        print(f"\n[GNN 配置 - 双头架构版本]")
-        print(f"  - 架构模式: {'双头 (质量头+关联头)' if parameters['gnn_use_dual_head'] else '单头'}")
+        # [新增] 稀疏图 GAT 参数
+        parameters['gnn_use_sparse_graph'] = use_sparse_graph
+        parameters['gnn_use_sparse_graph_v2'] = use_sparse_graph_v2
+        parameters['gnn_distance_threshold'] = distance_threshold
+        parameters['gnn_beta_threshold'] = beta_threshold
+
+        if use_sparse_graph_v2:
+            print(f"\n[GNN 配置 - 稀疏图 GAT V2]")
+            print(f"  - 边特征: 3维 [Δx, Δy, Σ]")
+            print(f"  - 节点特征: 3维语义特征")
+            print(f"  - 无Dustbin节点")
+        elif use_sparse_graph:
+            print(f"\n[GNN 配置 - 稀疏图 GAT V1]")
+            print(f"  - 边特征: 5维")
+            print(f"  - 有Dustbin节点")
+        else:
+            print(f"\n[GNN 配置 - 双头架构版本]")
+        if use_sparse_graph:
+            print(f"  - 架构模式: 稀疏图 GAT (质量头+关联头)")
+            print(f"  - 稀疏图过滤: 距离阈值={distance_threshold}, Beta阈值={beta_threshold}")
+        else:
+            print(f"  - 架构模式: {'双头 (质量头+关联头)' if parameters['gnn_use_dual_head'] else '单头'}")
         print(f"  - 预热步数: {parameters['gnn_warmup_steps']} ({warmup_source})")
         print(f"  - 隐藏维度: {parameters['gnn_hidden_dim']}")
         print(f"  - 学习率: {parameters['gnn_lr']}")
@@ -501,20 +709,43 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     # ---------------------------
     if load_measurements is not None:
         # 从文件加载预先生成的检测数据
-        cluttered_measurements = load_measurements_from_mat(
-            load_measurements,
-            add_synthetic_clutter=add_synthetic_clutter,
-            parameters=parameters,
-            mismatch_mode=mismatch_mode
-        )
+        if use_gnn:
+            # GNN 模式：使用匈牙利算法推断标签
+            cluttered_measurements, ground_truth_labels = load_measurements_from_mat(
+                load_measurements,
+                add_synthetic_clutter=add_synthetic_clutter,
+                parameters=parameters,
+                mismatch_mode=mismatch_mode,
+                return_labels=True,
+                data_va=data_va,
+                true_trajectory=true_trajectory
+            )
+            print("✓ 已使用匈牙利算法推断监督学习标签")
+        else:
+            # 纯 BP 模式：不需要标签
+            cluttered_measurements = load_measurements_from_mat(
+                load_measurements,
+                add_synthetic_clutter=add_synthetic_clutter,
+                parameters=parameters,
+                mismatch_mode=mismatch_mode
+            )
+            ground_truth_labels = None
     else:
         # 生成新的检测数据
         print("生成理想测量数据...")
         measurements = generate_measurements(true_trajectory, data_va, parameters)
 
         print("生成带杂波测量数据...")
-        cluttered_measurements = generate_cluttered_measurements(measurements, parameters)
-    
+        # 如果使用GNN，生成监督学习标签
+        if use_gnn:
+            cluttered_measurements, ground_truth_labels = generate_cluttered_measurements(
+                measurements, parameters, return_labels=True
+            )
+            print("✓ 已生成监督学习标签 (true_id, is_clutter)")
+        else:
+            cluttered_measurements = generate_cluttered_measurements(measurements, parameters)
+            ground_truth_labels = None
+
     # ---------------------------
     # 7. 调用核心BP-SLAM算法进行估计
     # ---------------------------
@@ -523,7 +754,8 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     print("=" * 60)
     (estimated_trajectory, estimated_anchors,
      posterior_particles_anchors, num_estimated_anchors) = bp_based_mint_slam(
-        data_va, cluttered_measurements, parameters, true_trajectory
+        data_va, cluttered_measurements, parameters, true_trajectory,
+        ground_truth_labels=ground_truth_labels  # 传递标签
     )
 
     print("\n" + "=" * 60)
@@ -676,6 +908,14 @@ if __name__ == '__main__':
                         help='在加载的数据上添加合成杂波 (仅在使用 --load-measurements 时有效)')
     parser.add_argument('--mismatch-mode', action='store_true',
                         help='参数失配模式：实际杂波参数与BP假设不同，测试BP鲁棒性 (仅在使用 --add-clutter 时有效)')
+    parser.add_argument('--use-sparse-graph', action='store_true',
+                        help='使用稀疏图 GAT V1（需要 torch_geometric）- 5维边特征，有Dustbin')
+    parser.add_argument('--use-sparse-graph-v2', action='store_true',
+                        help='使用稀疏图 GAT V2（需要 torch_geometric）- 3维边特征 [Δx, Δy, Σ]，无Dustbin')
+    parser.add_argument('--distance-threshold', type=float, default=None,
+                        help='稀疏图距离阈值（米），None=不过滤')
+    parser.add_argument('--beta-threshold', type=float, default=None,
+                        help='稀疏图 Beta 阈值，None=不过滤')
 
     args = parser.parse_args()
 
@@ -691,5 +931,9 @@ if __name__ == '__main__':
         gnn_inference_only=args.inference_only,
         load_measurements=args.load_measurements,
         add_synthetic_clutter=args.add_clutter,
-        mismatch_mode=args.mismatch_mode
+        mismatch_mode=args.mismatch_mode,
+        use_sparse_graph=args.use_sparse_graph or args.use_sparse_graph_v2,  # V1 或 V2 都算稀疏图
+        use_sparse_graph_v2=args.use_sparse_graph_v2,  # 新增：是否使用 V2
+        distance_threshold=args.distance_threshold,
+        beta_threshold=args.beta_threshold
     )
