@@ -1,1 +1,6 @@
 results/
+checkpoints/
+logs/
+data_set/
+/zb
+/Factor-Graph-Neural-Network
