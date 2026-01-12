@@ -134,7 +134,7 @@ def infer_labels_with_hungarian(measurements_cell, data_va, true_trajectory, num
     return labels
 
 
-def load_measurements_from_mat(mat_file='measurementbadf.mat', add_synthetic_clutter=False,
+def load_measurements_from_mat(mat_file='measurement1500.mat', add_synthetic_clutter=False,
                                parameters=None, mismatch_mode=False, return_labels=False,
                                data_va=None, true_trajectory=None):
     """
@@ -329,52 +329,67 @@ def add_synthetic_clutter_to_measurements(measurements_cell, parameters, mismatc
             # 生成误报测量（3行：距离、方差、幅度）
             false_alarms = np.zeros((3, num_false_alarms))
             if num_false_alarms > 0:
-                # 误报距离均匀分布在0到maxRange
-                false_alarms[0, :] = max_range * np.random.rand(num_false_alarms)
+                # ============================================================
+                # [纯底噪杂波模型] Pure Noise Clutter Model
+                # ============================================================
+                # 改进：杂波稀疏时，让每一个杂波都有显著的ReID特征
+                #
+                # 之前的问题：
+                # - Ghost杂波(50%)的ReID≈常数，和真信号太像
+                # - 杂波数量少时(平均1个)，GNN难以学习区分
+                #
+                # 解决方案：100%使用底噪型杂波
+                # - RSS完全随机，与距离无关
+                # - ReID = RSS + 20*log10(d) → 随距离变化(斜线)
+                # - 这种"物理不合理"的特征是GNN最容易识别的
+                #
+                # ReID分析:
+                # - 真信号: ReID ≈ 15 (常数，高)
+                # - 底噪: ReID = -90 + 20*log10(d)
+                #   d=1m: -90, d=10m: -70, d=30m: -60 (斜线，极低)
+                # ============================================================
+
+                # 所有杂波的距离均匀分布在0到maxRange
+                clutter_distances = max_range * np.random.rand(num_false_alarms)
+                false_alarms[0, :] = clutter_distances
                 # 误报测量方差为测距方差
                 false_alarms[1, :] = measurement_variance_range
-                # [阶段二改进] 物理相关性杂波 (Physics-Based Clutter)
-                # 核心思想：真实杂波不是随机的，而是遵循物理规律
-                # 杂波通常是反射/多径信号，遵循：RSS_clutter ≈ RSS_theory(d) - Δ
-                # 其中 Δ 是反射损耗（3-20dB）
+
+                # --- 修正后的杂波RSS模型 ---
+                # 问题：之前使用-95~-85dBm的固定值，与理论RSS差距超过50dB，被过滤掉
+                # 
+                # 解决方案：生成"物理上接近但有偏差"的RSS
+                # 1. 先计算理论RSS：RSS_theory = P_tx - 10*n*log10(d)
+                # 2. 然后添加随机偏移：RSS_clutter = RSS_theory + offset
+                # 3. 偏移量在 -30 到 +10 dB（主要偏弱，不超过50dB阈值）
                 #
-                # 这样生成的杂波：
-                # 1. 符合距离衰减规律（看起来像真信号）
-                # 2. 只是稍微弱一点（反射损耗）
-                # 3. 是GNN最难分辨的对手！
+                # 这样杂波不会被valid_mask过滤，但ReID特征仍然有差异：
+                # - 真实信号: ReID = RSS + 20*log10(d) ≈ P_tx + 10*n*log10(d) ≈ 常数
+                # - 杂波: ReID = (RSS_theory + offset) + 20*log10(d)
+                #       = P_tx + (20-10*n)*log10(d) + offset
+                #       当 n=2.5 时: = P_tx - 5*log10(d) + offset
+                #       → ReID随距离变化（斜率不同）+ 随机偏移
+                # ============================================================
+                
+                # 获取物理参数
+                P_tx = parameters.get('transmittedPower', 0.0)
+                n = parameters.get('pathLossExponent', 2.5)
+                
+                # 计算每个杂波距离对应的理论RSS
+                safe_distances = np.maximum(clutter_distances, 0.1)  # 避免log(0)
+                rss_theory = P_tx - 10 * n * np.log10(safe_distances)
+                
+                # 添加随机偏移（-30 到 +10 dB，主要偏弱）
+                # 偏弱的概率更大，模拟"虚假检测通常信号较弱"
+                rss_offset = np.random.uniform(-30.0, 10.0, num_false_alarms)
+                clutter_rss = rss_theory + rss_offset
+                
+                false_alarms[2, :] = clutter_rss
 
-                # [修改] 杂波物理参数：让杂波显著弱于真实信号
-                # 问题：原来的 P_tx=15.41 太强，导致杂波和真信号强度相近
-                # 解决：降低虚拟发射功率 + 增加反射损耗
-
-                # 1. 降低杂波的虚拟发射功率
-                # 真实信号 P_tx=15.41，杂波使用更低的功率模拟非视距传播
-                P_tx_clutter = -10.0  # 从 15.41 降低到 -10
-                n = 2.0
-
-                # 2. 计算杂波距离对应的理论RSS
-                clutter_dists = false_alarms[0, :]
-                safe_dists = np.maximum(clutter_dists, 0.1)  # 防止log(0)
-                rss_theory = P_tx_clutter - 10 * n * np.log10(safe_dists)
-
-                # 3. 增加反射损耗 (Reflection Loss)
-                # 从 3-20dB 增加到 15-35dB，模拟强烈的非视距衰减
-                # 15dB: 单次墙面反射
-                # 35dB: 多次反射 + 穿墙衰减
-                reflection_loss = np.random.uniform(15.0, 35.0, num_false_alarms)
-
-                # 4. 合成杂波RSS = 理论值 - 反射损耗 + 小噪声
-                clutter_rss_dbm = rss_theory - reflection_loss + np.random.normal(0, 2.0, num_false_alarms)
-
-                # 5. 强行截断：确保杂波不超过 -30 dBm（远低于真实信号的 -13 dBm）
-                clutter_rss_dbm = np.minimum(clutter_rss_dbm, -30.0)
-
-                false_alarms[2, :] = clutter_rss_dbm
-
-                # 结果：
-                # - 杂波 RSS 范围：约 -60 ~ -30 dBm
-                # - 真实信号 RSS：约 -13 ~ 1 dBm
-                # - 差距显著，GNN 可以学习区分
+                # 结果分析:
+                # - 杂波RSS: 在理论值附近波动（-30~+10 dB偏移）
+                # - 不会被50dB阈值过滤
+                # - ReID特征: 因为偏移是随机的，ReID = RSS + 20*log10(d) 有更大方差
 
             # 生成标签（在打乱之前）
             if return_labels:
@@ -487,9 +502,9 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
     # ---------------------------
     parameters = {}
     parameters['known_track'] = 0  # 是否已知轨迹（0表示未知轨迹）
-
+    #scenarioCleanM2_new_1500.mat
     # 加载场景数据，包括虚拟锚点 dataVA 和真实轨迹 trueTrajectory
-    mat_data = sio.loadmat('scenarioCleanM2_new_1500.mat')
+    mat_data = sio.loadmat('scenarioCleanM2_new901.mat')
     data_va_raw = mat_data['dataVA'][:, 0]  # 修复：获取所有传感器数据
     true_trajectory = mat_data['trueTrajectory']
 
@@ -591,7 +606,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
             warmup_source = "自动计算"
 
         parameters['gnn_hidden_dim'] = 64  # 隐藏层维度
-        parameters['gnn_lr'] = 1e-4  # [修正] 学习率降低到1e-4，防止过拟合
+        parameters['gnn_lr'] = 1e-5  # [修正] 学习率降低到1e-5，防止训练不稳定
 
         # [改进版] 新增参数 - 针对连续凸起问题优化
         parameters['gnn_use_ema'] = True  # 使用指数移动平均
@@ -830,7 +845,7 @@ def main(use_gnn=False, max_steps=900, num_particles=100000, gnn_warmup=None,
              true_trajectory=true_trajectory,
              num_estimated_anchors=num_estimated_anchors,
              estimated_anchors=np.array(estimated_anchors, dtype=object),
-             posterior_particles_anchors=np.array(posterior_particles_anchors, dtype=object),
+             # posterior_particles_anchors=np.array(posterior_particles_anchors, dtype=object),  # 注释掉以节省内存
              parameters=parameters,
              use_gnn=use_gnn,
              mean_error=mean_error,

@@ -5,7 +5,9 @@ BP-based Multipath-assisted SLAM core algorithm
 Author: Florian Meyer, Erik Leitinger, 20/05/17
 Converted to Python: 2025
 """
-
+import os
+import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import time
 import copy
@@ -15,6 +17,9 @@ from ..utils.distance import calc_distance
 from .anchors import (init_anchors, predict_anchors, predict_measurements,
                      generate_new_anchors, delete_unreliable_va)
 from .association import calculate_association_probabilities_ga
+from .reid_utils import (compute_fingerprint, normalize_fingerprint, 
+                         compute_delta_f_norm, update_fingerprint_ema,
+                         get_anchor_fingerprints, EMA_ALPHA, MIN_EXIST_PROB, MIN_ASSOC_PROB)
 
 # FGNN 相关导入
 try:
@@ -100,7 +105,7 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
     if use_gnn and FGNN_AVAILABLE:
         gnn_device = 'cuda' if torch.cuda.is_available() else 'cpu'
         gnn_hidden_dim = parameters.get('gnn_hidden_dim', 64)
-        gnn_lr = parameters.get('gnn_lr', 1e-4)
+        gnn_lr = parameters.get('gnn_lr', 1e-5)  # 降低学习率，1e-4太大会导致训练不稳定
         gnn_checkpoint_path = parameters.get('gnn_checkpoint_path', None)
 
         # [改进版] 新增参数
@@ -507,6 +512,9 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                             else:
                                 print(f"  ❌ 标签为 None - 没有使用监督学习！")
 
+                        # [ReID] 提取锚点历史指纹
+                        reid_fingerprints = get_anchor_fingerprints(posterior_particles_anchors[sensor])
+
                         assoc_probs, dustbin_probs, sigma_scale, loss = gnn_trainer.step(
                             filtered_measurements=filtered_measurements,
                             predicted_measurements=predicted_measurements,
@@ -520,7 +528,8 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                             num_iterations=3,
                             sensor_id=sensor,
                             ground_truth_labels=filtered_labels,  # 传递监督标签
-                            update_weights=is_last_sensor  # 只在最后一个传感器更新
+                            update_weights=is_last_sensor,  # 只在最后一个传感器更新
+                            reid_fingerprints=reid_fingerprints  # [ReID] 传递锚点历史指纹
                         )
                     elif use_sparse_graph and SPARSE_GAT_AVAILABLE:
                         # ===== 稀疏图 GAT V1 =====
@@ -612,6 +621,21 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
 
                         # 2. 关联概率（已经是概率，不需要再除以dustbin）
                         gnn_probs = assoc_probs
+
+                        plt.figure(figsize=(10, 8))
+                        # 绘制热力图
+                        # vmin=0, vmax=1 固定色标范围，方便观察每一步的变化
+                        sns.heatmap(gnn_probs, annot=True, fmt=".2f", cmap="YlOrRd", vmin=0, vmax=1)
+                        save_dir = "debug_heatmaps"
+                        os.makedirs(save_dir, exist_ok=True)
+                        plt.title(f"Step {step:04d} - GNN Association Matrix\nLoss: {loss:.4f}")
+                        plt.xlabel("Anchors (Map Features)")
+                        plt.ylabel("Measurements")
+                        
+                        # 保存图片：文件名带上步数 k，如 step_0001.png
+                        filename = os.path.join(save_dir, f"step_{step:04d}.png")
+                        plt.savefig(filename)
+                        plt.close() # 极其重要！画完关掉，否则内存会爆
 
                         # 3. 映射回原始测量索引
                         full_gnn_probs = np.zeros((num_measurements, num_anchors))
@@ -809,7 +833,7 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     # 累加权重 (利用广播机制)
                     # factor * ratio[None, :] -> (1, num_anchors)
                     # exp term -> (num_particles, num_anchors)
-                    weights += (factor * ratio[np.newaxis, :] * np.exp(-0.5 * (diff**2) / R))
+                    weights += (factor * ratio[np.newaxis, :] * np.exp(-0.5 * (diff**2) / R)) 
             else:
                 # 没有测量时，所有权重为未检测概率
                 weights[:, :] = (1 - detection_probability)
@@ -878,12 +902,22 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     (messages_new[measurement] * constant + 1)
                 )
 
+                # [ReID] 计算新锚点的初始指纹
+                # 使用创建该锚点的测量值初始化
+                if measurements.shape[0] >= 3:
+                    meas_dist = measurements[0, measurement]
+                    meas_rss = measurements[2, measurement]
+                    reid_fingerprint_init = compute_fingerprint(meas_rss, meas_dist)
+                else:
+                    reid_fingerprint_init = None
+
                 # 扩展列表以容纳新锚点
                 if new_anchor_idx >= len(posterior_particles_anchors[sensor]):
                     posterior_particles_anchors[sensor].append({
                         'x': new_particles_anchors[measurement]['x'],
                         'w': posterior_existence / num_particles,
-                        'posteriorExistence': posterior_existence
+                        'posteriorExistence': posterior_existence,
+                        'reid_fingerprint': reid_fingerprint_init  # [ReID] 出生时初始化指纹
                     })
                     estimated_anchors[sensor][step].append({
                         'x': np.mean(new_particles_anchors[measurement]['x'], axis=1),
@@ -894,11 +928,48 @@ def bp_based_mint_slam(data_va, cluttered_measurements, parameters, true_traject
                     posterior_particles_anchors[sensor][new_anchor_idx]['posteriorExistence'] = posterior_existence
                     posterior_particles_anchors[sensor][new_anchor_idx]['x'] = new_particles_anchors[measurement]['x']
                     posterior_particles_anchors[sensor][new_anchor_idx]['w'] = posterior_existence / num_particles
+                    # [ReID] 更新已存在锚点的指纹（如果之前没有）
+                    if posterior_particles_anchors[sensor][new_anchor_idx].get('reid_fingerprint') is None:
+                        posterior_particles_anchors[sensor][new_anchor_idx]['reid_fingerprint'] = reid_fingerprint_init
                     estimated_anchors[sensor][step][new_anchor_idx]['x'] = np.mean(
                         new_particles_anchors[measurement]['x'], axis=1
                     )
                     estimated_anchors[sensor][step][new_anchor_idx]['posteriorExistence'] = posterior_existence
                     estimated_anchors[sensor][step][new_anchor_idx]['generatedAt'] = step
+
+            # ===== [ReID] 阶段三：维护 - EMA 更新锚点指纹 =====
+            # 只在使用 GNN 且有关联概率输出时更新
+            if use_gnn and 'assoc_probs' in dir() and assoc_probs is not None:
+                num_current_anchors = len(posterior_particles_anchors[sensor])
+                for anchor_idx in range(min(num_anchors, num_current_anchors)):
+                    anchor = posterior_particles_anchors[sensor][anchor_idx]
+                    
+                    # 1. 筛选：只更新高置信度锚点
+                    if anchor['posteriorExistence'] < MIN_EXIST_PROB:
+                        continue
+                    
+                    # 2. 查找：找到与该锚点关联概率最高的"赢家测量"
+                    if anchor_idx >= assoc_probs.shape[1]:
+                        continue
+                    
+                    winner_meas_idx = np.argmax(assoc_probs[:, anchor_idx])
+                    winner_assoc_prob = assoc_probs[winner_meas_idx, anchor_idx]
+                    
+                    # 3. 置信度检查：关联概率足够高才更新
+                    if winner_assoc_prob < MIN_ASSOC_PROB:
+                        continue
+                    
+                    # 4. 计算赢家测量的瞬时指纹
+                    # [BUG FIX] 使用 filtered_measurements 而非 measurements
+                    # assoc_probs 的索引是基于 filtered_measurements 的
+                    if filtered_measurements.shape[0] >= 3 and winner_meas_idx < filtered_measurements.shape[1]:
+                        d_winner = filtered_measurements[0, winner_meas_idx]
+                        rss_winner = filtered_measurements[2, winner_meas_idx]
+                        F_instant = compute_fingerprint(rss_winner, d_winner)
+                        
+                        # 5. EMA 更新
+                        F_old = anchor.get('reid_fingerprint', None)
+                        anchor['reid_fingerprint'] = update_fingerprint_ema(F_old, F_instant, EMA_ALPHA)
 
             # 删除不可靠的锚点（存在概率低于阈值）
             estimated_anchors[sensor][step], posterior_particles_anchors[sensor] = delete_unreliable_va(

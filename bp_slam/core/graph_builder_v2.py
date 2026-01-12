@@ -1,25 +1,28 @@
 """
 bp_slam/core/graph_builder_v2.py
-稀疏图构建工具 V2 - 简化版
+稀疏图构建工具 V2 - ReID 增强版
 
 改进：
 1. 删除 Dustbin 节点和边
-2. 边特征简化为 3 维：[Δx, Δy, Σ]
-3. 节点特征更丰富：
-   - 测量节点：[type_emb, RSS_norm, meas_uncertainty]
-   - 锚点节点：[type_emb, existence_prob, pred_uncertainty]
+2. 边特征 4 维：[Δx, Δy, Σ, ΔF]  (新增 ReID 指纹差异)
+3. 节点特征 4 维：
+   - 测量节点：[type_emb, RSS_norm, meas_uncertainty, F_instant]
+   - 锚点节点：[type_emb, existence_prob, pred_uncertainty, F_history]
 """
 
 import numpy as np
 import torch
+from .reid_utils import (compute_fingerprint, normalize_fingerprint, 
+                         compute_delta_f_norm, FINGERPRINT_CENTER, FINGERPRINT_SCALE)
 
 
 def build_sparse_graph_v2(filtered_measurements, predicted_measurements, predicted_uncertainties,
                           existence_probs, predicted_particles_agent, predicted_particles_anchors,
                           weights_anchor, P_tx=15.41, n=2.0,
-                          distance_threshold=None, beta_threshold=None):
+                          distance_threshold=None, beta_threshold=None,
+                          reid_fingerprints=None):
     """
-    构建简化的稀疏图结构（V2版本）
+    构建简化的稀疏图结构（V2版本 - ReID 增强）
 
     参数:
         filtered_measurements: (3, M) [距离, 方差, RSS]
@@ -33,11 +36,12 @@ def build_sparse_graph_v2(filtered_measurements, predicted_measurements, predict
         n: 路径损耗指数
         distance_threshold: 距离阈值（用于过滤边），None 表示不过滤
         beta_threshold: Beta 阈值（用于过滤边），None 表示不过滤
+        reid_fingerprints: (K,) 锚点历史指纹列表，元素可为 None
 
     返回:
-        node_features: (N, node_dim) 节点特征，N = M + K（无Dustbin）
+        node_features: (N, 4) 节点特征，N = M + K（无Dustbin）
         edge_index: (2, E) 边索引
-        edge_attr: (E, 3) 边特征 [Δx, Δy, Σ]
+        edge_attr: (E, 4) 边特征 [Δx, Δy, Σ, ΔF]
         node_types: (N,) 节点类型 (0=测量, 1=锚点)
         num_measurements: M
         num_anchors: K
@@ -93,24 +97,23 @@ def build_sparse_graph_v2(filtered_measurements, predicted_measurements, predict
     # 归一化 RSS
     rss_norm = (rss_measurements - rss_mean) / rss_std
 
-    # [DEBUG] 打印 RSS 归一化统计信息
-    print(f"\n[RSS 归一化检查]")
-    print(f"  原始 RSS 范围: [{np.min(rss_measurements):.2f}, {np.max(rss_measurements):.2f}] dBm")
-    print(f"  RSS 均值: {rss_mean:.2f} dBm, 标准差: {rss_std:.2f} dB")
-    print(f"  归一化后范围: [{np.min(rss_norm):.4f}, {np.max(rss_norm):.4f}]")
-    if np.max(np.abs(rss_norm)) > 5.0:
-        print(f"  ⚠️  警告: RSS 归一化值超出 [-5, 5] 范围！可能导致梯度爆炸")
-    elif np.max(np.abs(rss_norm)) > 2.0:
-        print(f"  ⚠️  注意: RSS 归一化值在 [-2, 2] 之外，建议检查")
-    else:
-        print(f"  ✓ RSS 归一化值在合理范围内 [-2, 2]")
+    # --- 5. 预计算测量的瞬时指纹 ---
+    meas_fingerprints = np.zeros(num_measurements)
+    for m in range(num_measurements):
+        meas_dist = filtered_measurements[0, m]
+        if filtered_measurements.shape[0] >= 3:
+            meas_rss = filtered_measurements[2, m]
+        else:
+            meas_rss = 0.0
+        meas_fingerprints[m] = compute_fingerprint(meas_rss, meas_dist)
 
-    # --- 5. 构建边列表（稀疏，无 Dustbin）---
+    # --- 6. 构建边列表（稀疏，无 Dustbin）---
     edge_list = []  # [(src, dst, features), ...]
 
     for m in range(num_measurements):
         meas_dist = filtered_measurements[0, m]
         meas_var = filtered_measurements[1, m]
+        F_instant = meas_fingerprints[m]  # 瞬时指纹
 
         for k in range(num_anchors):
             # 计算预测的 2D 向量（从移动体到锚点）
@@ -137,12 +140,6 @@ def build_sparse_graph_v2(filtered_measurements, predicted_measurements, predict
             delta_y = delta_d * (delta_y_pred / pred_dist)
 
             # [修改] 手动缩放 Δx 和 Δy - 使用更小的分母放大差异
-            # 原来：除以 20.0（最大视距）-> 差异不明显
-            # 现在：除以 3.0（几何门限）-> 放大差异
-            # 效果：
-            #   - 正确匹配（误差 0.1m）: 0.1/3 = 0.033（接近0）
-            #   - 错误匹配（误差 2.0m）: 2.0/3 = 0.667（明显远离0）
-            #   - 差别被放大 6-7 倍，网络更容易区分！
             scale_factor = 3.0
             delta_x_norm = delta_x / scale_factor
             delta_y_norm = delta_y / scale_factor
@@ -155,19 +152,23 @@ def build_sparse_graph_v2(filtered_measurements, predicted_measurements, predict
             max_sigma = 5.0
             sigma_norm = sigma_combined / max_sigma
 
+            # [ReID] 计算指纹差异
+            F_history = reid_fingerprints[k] if reid_fingerprints is not None else None
+            delta_F_norm = compute_delta_f_norm(F_instant, F_history)
+
             # 添加边: 测量节点 m -> 锚点节点 (M + k)
             edge_list.append((
                 m,  # 源节点 (测量)
                 num_measurements + k,  # 目标节点 (锚点)
-                [delta_x_norm, delta_y_norm, sigma_norm]  # 边特征 [Δx_norm, Δy_norm, Σ_norm]
+                [delta_x_norm, delta_y_norm, sigma_norm, delta_F_norm]  # 边特征 [Δx, Δy, Σ, ΔF]
             ))
 
-    # --- 6. 转换为 PyTorch Geometric 格式 ---
+    # --- 7. 转换为 PyTorch Geometric 格式 ---
     if len(edge_list) == 0:
         # 没有有效边，返回空图
         num_nodes = num_measurements + num_anchors
         edge_index = torch.zeros((2, 0), dtype=torch.long)
-        edge_attr = torch.zeros((0, 3), dtype=torch.float32)
+        edge_attr = torch.zeros((0, 4), dtype=torch.float32)  # 4维边特征
     else:
         # 提取边索引和边特征
         src_nodes = [e[0] for e in edge_list]
@@ -175,54 +176,32 @@ def build_sparse_graph_v2(filtered_measurements, predicted_measurements, predict
         edge_features = [e[2] for e in edge_list]
 
         edge_index = torch.tensor([src_nodes, dst_nodes], dtype=torch.long)  # (2, E)
-        edge_attr = torch.tensor(edge_features, dtype=torch.float32)  # (E, 3)
+        edge_attr = torch.tensor(edge_features, dtype=torch.float32)  # (E, 4)
 
-        # [DEBUG] 打印边特征统计信息
-        edge_features_np = np.array(edge_features)
-        print(f"\n[边特征归一化检查]")
-        print(f"  边数量: {len(edge_list)}")
-        print(f"  Δx_norm 范围: [{np.min(edge_features_np[:, 0]):.4f}, {np.max(edge_features_np[:, 0]):.4f}]")
-        print(f"  Δy_norm 范围: [{np.min(edge_features_np[:, 1]):.4f}, {np.max(edge_features_np[:, 1]):.4f}]")
-        print(f"  Σ_norm 范围: [{np.min(edge_features_np[:, 2]):.4f}, {np.max(edge_features_np[:, 2]):.4f}]")
-
-        # 检查是否有异常值（归一化后应该在 [-1, 1] 范围内）
-        max_delta = max(np.max(np.abs(edge_features_np[:, 0])), np.max(np.abs(edge_features_np[:, 1])))
-        max_sigma = np.max(edge_features_np[:, 2])
-
-        if max_delta > 2.0:
-            print(f"  ⚠️  警告: Δx/Δy 归一化值超出 [-2, 2] 范围！可能导致梯度爆炸")
-        elif max_delta > 1.0:
-            print(f"  ⚠️  注意: Δx/Δy 归一化值在 [-1, 1] 之外，建议检查")
-        else:
-            print(f"  ✓ Δx/Δy 归一化值在合理范围内 [-1, 1]")
-
-        if max_sigma > 2.0:
-            print(f"  ⚠️  警告: Σ 归一化值超出 2.0！可能导致梯度爆炸")
-        elif max_sigma > 1.0:
-            print(f"  ⚠️  注意: Σ 归一化值 > 1.0 (max={max_sigma:.2f})，建议检查")
-        else:
-            print(f"  ✓ Σ 归一化值在合理范围内 [0, 1]")
-
-    # --- 7. 构建节点特征 ---
+    # --- 8. 构建节点特征 ---
     # 节点类型: 0=测量, 1=锚点（无 Dustbin）
     num_nodes = num_measurements + num_anchors
 
-    # 节点特征维度：
-    # - 测量节点: [type_emb=1.0, RSS_norm, meas_uncertainty]  -> 3维
-    # - 锚点节点: [type_emb=0.0, existence_prob, pred_uncertainty] -> 3维
-    node_features = torch.zeros((num_nodes, 3), dtype=torch.float32)
+    # 节点特征维度：4维
+    # - 测量节点: [type_emb=1.0, RSS_norm, meas_uncertainty, F_instant]
+    # - 锚点节点: [type_emb=0.0, existence_prob, pred_uncertainty, F_history]
+    node_features = torch.zeros((num_nodes, 4), dtype=torch.float32)
 
-    # 测量节点特征
+    # 测量节点特征：[type_emb=1.0, RSS_norm, meas_uncertainty, F_instant]
     for m in range(num_measurements):
         node_features[m, 0] = 1.0  # type_emb (测量节点)
         node_features[m, 1] = rss_norm[m]  # RSS归一化
         node_features[m, 2] = filtered_measurements[1, m]  # 测量不确定度
+        node_features[m, 3] = normalize_fingerprint(meas_fingerprints[m])  # [ReID] 瞬时指纹
 
-    # 锚点节点特征
+    # 锚点节点特征：[type_emb=0.0, existence_prob, pred_uncertainty, F_history]
     for k in range(num_anchors):
         node_features[num_measurements + k, 0] = 0.0  # type_emb (锚点节点)
         node_features[num_measurements + k, 1] = existence_probs[k]  # 存在概率
         node_features[num_measurements + k, 2] = predicted_uncertainties[k]  # 预测不确定度
+        # [ReID] 历史指纹
+        F_history = reid_fingerprints[k] if reid_fingerprints is not None else None
+        node_features[num_measurements + k, 3] = normalize_fingerprint(F_history)
 
     # 节点类型标签
     node_types = torch.zeros(num_nodes, dtype=torch.long)
@@ -235,8 +214,10 @@ def build_sparse_graph_v2(filtered_measurements, predicted_measurements, predict
     if num_measurements > 0:
         meas_rss = node_features[:num_measurements, 1].numpy()
         meas_unc = node_features[:num_measurements, 2].numpy()
+        meas_fp = node_features[:num_measurements, 3].numpy()
         print(f"  测量节点 RSS 归一化范围: [{np.min(meas_rss):.4f}, {np.max(meas_rss):.4f}]")
         print(f"  测量节点不确定度范围: [{np.min(meas_unc):.4f}, {np.max(meas_unc):.4f}]")
+        print(f"  测量节点 F_instant 范围: [{np.min(meas_fp):.4f}, {np.max(meas_fp):.4f}]")
 
         if np.max(np.abs(meas_rss)) > 5.0:
             print(f"  ⚠️  警告: 测量 RSS 归一化值超出 [-5, 5]！")
@@ -246,8 +227,10 @@ def build_sparse_graph_v2(filtered_measurements, predicted_measurements, predict
     if num_anchors > 0:
         anchor_exist = node_features[num_measurements:, 1].numpy()
         anchor_unc = node_features[num_measurements:, 2].numpy()
+        anchor_fp = node_features[num_measurements:, 3].numpy()
         print(f"  锚点节点存在概率范围: [{np.min(anchor_exist):.4f}, {np.max(anchor_exist):.4f}]")
         print(f"  锚点节点不确定度范围: [{np.min(anchor_unc):.4f}, {np.max(anchor_unc):.4f}]")
+        print(f"  锚点节点 F_history 范围: [{np.min(anchor_fp):.4f}, {np.max(anchor_fp):.4f}]")
 
         if np.max(anchor_unc) > 10.0:
             print(f"  ⚠️  警告: 锚点不确定度超出 10.0！")

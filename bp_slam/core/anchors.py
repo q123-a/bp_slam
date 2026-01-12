@@ -48,7 +48,8 @@ def init_anchors(parameters, data_va, num_steps, num_sensors):
             posterior_particles_anchors[sensor][anchor] = {
                 'x': np.zeros((2, num_particles)),
                 'w': np.zeros(num_particles),
-                'posteriorExistence': 1.0
+                'posteriorExistence': 1.0,
+                'reid_fingerprint': None  # [ReID] 预设锚点无测量历史，初始化为 None
             }
 
             # 权重均匀分配
